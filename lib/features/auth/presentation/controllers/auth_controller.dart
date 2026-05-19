@@ -9,10 +9,11 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
   return repo.authStateChanges;
 });
 
-// Fornece acesso direto ao usuário, caso precise ler as propriedades dele
+// Fornece acesso direto ao usuário, reagindo a mudanças de sessão (login/logout)
 final currentUserProvider = Provider<User?>((ref) {
-  final repo = ref.watch(authRepositoryProvider);
-  return repo.currentUser;
+  // Ao observar o authStateProvider, esse provider recalcula sempre que a sessão mudar
+  ref.watch(authStateProvider);
+  return Supabase.instance.client.auth.currentUser;
 });
 
 // Provider do Controller para manejar as lógicas da UI (Modern Riverpod AsyncNotifier)
