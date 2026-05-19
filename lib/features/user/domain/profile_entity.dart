@@ -1,9 +1,13 @@
+import '../../../core/validation/validators.dart';
+import '../../../core/domain/address/address_entity.dart';
+
 class ProfileEntity {
   final String id;
   final String name;
   final String email;
   final String phone;
   final String location;
+  final AddressEntity address;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -13,6 +17,7 @@ class ProfileEntity {
     required this.email,
     required this.phone,
     required this.location,
+    required this.address,
     this.createdAt,
     this.updatedAt,
   });
@@ -24,6 +29,7 @@ class ProfileEntity {
       email: json['email'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       location: json['location'] as String? ?? '',
+      address: AddressEntity.fromJson(json),
       createdAt: json['created_at'] != null 
           ? DateTime.parse(json['created_at'] as String) 
           : null,
@@ -40,6 +46,7 @@ class ProfileEntity {
       'phone': phone,
       'email': email,
       'location': location,
+      ...address.toJson(),
     };
   }
 
@@ -49,6 +56,7 @@ class ProfileEntity {
     String? email,
     String? phone,
     String? location,
+    AddressEntity? address,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -58,51 +66,41 @@ class ProfileEntity {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       location: location ?? this.location,
+      address: address ?? this.address,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
-  /// Valida as regras de negócio do perfil de usuário de acordo com os requisitos IBL01.
-  /// Retorna null se for válido, ou uma string de erro caso contrário.
   String? validate() {
-    if (name.trim().isEmpty) {
-      return 'O nome é obrigatório.';
-    }
-    if (name.length > 100) {
-      return 'O nome deve ter no máximo 100 caracteres.';
-    }
+    final nameError = AppValidators.combine([
+      AppValidators.required('Nome'),
+      AppValidators.maxLength(100, 'Nome'),
+    ])(name);
+    if (nameError != null) return nameError;
 
-    if (email.trim().isEmpty) {
-      return 'O e-mail é obrigatório.';
-    }
-    if (email.length > 80) {
-      return 'O e-mail deve ter no máximo 80 caracteres.';
-    }
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(email)) {
-      return 'Formato de e-mail inválido.';
-    }
+    final emailError = AppValidators.combine([
+      AppValidators.required('E-mail'),
+      AppValidators.maxLength(80, 'E-mail'),
+      AppValidators.email(),
+    ])(email);
+    if (emailError != null) return emailError;
 
-    if (phone.trim().isEmpty) {
-      return 'O telefone é obrigatório.';
-    }
-    // Remove espaços e símbolos para validação de tamanho de dígitos
-    final digitsOnly = phone.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digitsOnly.length < 8 || digitsOnly.length > 15) {
-      return 'O telefone deve conter entre 8 e 15 dígitos numéricos.';
-    }
-    final phoneRegex = RegExp(r'^\+?[0-9\s\-()]+$');
-    if (!phoneRegex.hasMatch(phone)) {
-      return 'Formato de telefone inválido.';
-    }
+    final phoneError = AppValidators.combine([
+      AppValidators.required('Telefone'),
+      AppValidators.phone(),
+    ])(phone);
+    if (phoneError != null) return phoneError;
 
-    if (location.trim().isEmpty) {
-      return 'A localização é obrigatória.';
-    }
-    if (location.length > 150) {
-      return 'A localização deve ter no máximo 150 caracteres.';
-    }
+    // Validação recursiva e síncrona do endereço estruturado
+    final addressError = address.validate();
+    if (addressError != null) return addressError;
+
+    final locationError = AppValidators.combine([
+      AppValidators.required('Localização'),
+      AppValidators.maxLength(150, 'Localização'),
+    ])(location);
+    if (locationError != null) return locationError;
 
     return null;
   }

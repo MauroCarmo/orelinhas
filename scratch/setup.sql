@@ -13,6 +13,13 @@ create table if not exists public.profiles (
   phone varchar(15) not null,
   email varchar(80) not null unique,
   location varchar(150) not null,
+  cep varchar(8) not null default '',
+  street varchar(150) not null default '',
+  number varchar(20) not null default '',
+  district varchar(100) not null default '',
+  city varchar(100) not null default '',
+  state varchar(2) not null default '',
+  complement varchar(150) not null default '',
   created_at timestamp with time zone default now() not null,
   updated_at timestamp with time zone default now() not null
 );
@@ -46,13 +53,23 @@ security definer
 language plpgsql
 as $$
 begin
-  insert into public.profiles (id, name, phone, email, location)
+  insert into public.profiles (
+    id, name, phone, email, location,
+    cep, street, number, district, city, state, complement
+  )
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'name', ''),
     coalesce(new.raw_user_meta_data->>'phone', ''),
     new.email,
-    coalesce(new.raw_user_meta_data->>'location', '')
+    coalesce(new.raw_user_meta_data->>'location', ''),
+    coalesce(new.raw_user_meta_data->>'cep', ''),
+    coalesce(new.raw_user_meta_data->>'street', ''),
+    coalesce(new.raw_user_meta_data->>'number', ''),
+    coalesce(new.raw_user_meta_data->>'district', ''),
+    coalesce(new.raw_user_meta_data->>'city', ''),
+    coalesce(new.raw_user_meta_data->>'state', ''),
+    coalesce(new.raw_user_meta_data->>'complement', '')
   );
   return new;
 end;

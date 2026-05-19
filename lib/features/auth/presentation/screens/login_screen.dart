@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/exceptions/app_exceptions.dart';
+import '../../../../core/validation/sanitizers.dart';
 import '../controllers/auth_controller.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -23,17 +24,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _login() async {
+    final email = AppSanitizers.normalizeEmail(_emailController.text);
+    final password = _passwordController.text; // Senhas não sofrem normalização destrutiva
+
     final authCtrl = ref.read(authControllerProvider.notifier);
-    await authCtrl.signIn(_emailController.text.trim(), _passwordController.text);
+    await authCtrl.signIn(email, password);
+    
+    if (!mounted) return;
     
     // Mostra erro caso exista
     final state = ref.read(authControllerProvider);
-    if (state.hasError && mounted) {
-      String errorMessage = state.error.toString();
-      if (state.error is AuthException) {
-        errorMessage = (state.error as AuthException).message;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage)));
+    if (state.hasError) {
+      final error = state.error;
+      final errorMessage = error is AppException ? error.message : 'Ocorreu um erro inesperado.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

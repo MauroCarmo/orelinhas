@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/exceptions/app_exceptions.dart';
+import '../../../../core/exceptions/error_mapper.dart';
+import '../../../../core/logger/app_logger.dart';
 import '../../data/auth_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User, AuthState, Supabase;
 
 // Escuta a sessão global do usuário logado
 final authStateProvider = StreamProvider<AuthState>((ref) {
@@ -11,7 +14,6 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
 
 // Fornece acesso direto ao usuário, reagindo a mudanças de sessão (login/logout)
 final currentUserProvider = Provider<User?>((ref) {
-  // Ao observar o authStateProvider, esse provider recalcula sempre que a sessão mudar
   ref.watch(authStateProvider);
   return Supabase.instance.client.auth.currentUser;
 });
@@ -23,6 +25,7 @@ final authControllerProvider = AsyncNotifierProvider<AuthController, void>(() {
 
 class AuthController extends AsyncNotifier<void> {
   late AuthRepository _repository;
+  final _logger = AppLogger.category('AuthController');
 
   @override
   FutureOr<void> build() {
@@ -37,9 +40,9 @@ class AuthController extends AsyncNotifier<void> {
       if (lockStatus['is_locked'] == true) {
         final remainingSec = lockStatus['remaining_seconds'] as int? ?? 0;
         final minutes = (remainingSec / 60).ceil();
-        throw Exception(
-          'Conta temporariamente bloqueada devido a 3 tentativas falhas. '
-          'Tente novamente em $minutes minuto(s).',
+        throw AppAuthException(
+          'Conta temporariamente bloqueada devido a 3 tentativas falhas. Tente novamente em $minutes minuto(s).',
+          technicalMessage: 'Conta bloqueada temporariamente (RPC is_email_locked).',
         );
       }
 
@@ -50,28 +53,41 @@ class AuthController extends AsyncNotifier<void> {
         // Login com sucesso: reseta tentativas
         await _repository.registerAttempt(email, true);
 
-        // Validar se o email está confirmado se a flag 'Email Confirm' estiver ativa no Supabase
-        if (_repository.currentUser != null && _repository.currentUser!.emailConfirmedAt == null) {
-          state = AsyncError('Por favor, verifique seu e-mail antes de fazer login.', StackTrace.current);
+        // Validar se o email está confirmado
+        final user = _repository.currentUser;
+        if (user != null && user.emailConfirmedAt == null) {
+          _logger.w('Tentativa de login por usuário com e-mail não confirmado.', context: {'email': email});
+          state = AsyncError(
+            const AppAuthException('Por favor, verifique seu e-mail antes de fazer login.'),
+            StackTrace.current,
+          );
           await _repository.signOut();
           return;
         }
         state = const AsyncData(null);
-      } on AuthException catch (_) {
+      } on AppAuthException catch (e) {
         // Falha no login: registra tentativa malsucedida
         await _repository.registerAttempt(email, false);
 
         // Verifica se bloqueou após essa falha
         final postLockStatus = await _repository.checkLock(email);
         if (postLockStatus['is_locked'] == true) {
-          throw Exception('Usuário ou senha inválidos. Conta bloqueada por 15 minutos.');
+          throw const AppAuthException(
+            'Usuário ou senha inválidos. Conta bloqueada por 15 minutos.',
+            technicalMessage: 'Erro de credencial resultando em bloqueio temporário.',
+          );
         }
 
         // Mensagem padrão amigável exigida pelo IBL02
-        throw Exception('Usuário ou senha inválidos');
+        throw AppAuthException(
+          'Usuário ou senha inválidos.',
+          technicalMessage: e.technicalMessage ?? e.message,
+        );
       }
     } catch (e, st) {
-      state = AsyncError(e, st);
+      final appException = AppErrorMapper.map(e, st);
+      _logger.e('Erro ao realizar login no AuthController.', error: appException, stackTrace: st, context: {'email': email});
+      state = AsyncError(appException, st);
     }
   }
 
@@ -93,7 +109,9 @@ class AuthController extends AsyncNotifier<void> {
       );
       state = const AsyncData(null);
     } catch (e, st) {
-      state = AsyncError(e, st);
+      final appException = AppErrorMapper.map(e, st);
+      _logger.e('Erro ao realizar cadastro no AuthController.', error: appException, stackTrace: st, context: {'email': email});
+      state = AsyncError(appException, st);
     }
   }
 
@@ -103,7 +121,9 @@ class AuthController extends AsyncNotifier<void> {
       await _repository.signInWithGoogle();
       state = const AsyncData(null);
     } catch (e, st) {
-      state = AsyncError(e, st);
+      final appException = AppErrorMapper.map(e, st);
+      _logger.e('Erro no login via Google OAuth no AuthController.', error: appException, stackTrace: st);
+      state = AsyncError(appException, st);
     }
   }
 
@@ -113,7 +133,9 @@ class AuthController extends AsyncNotifier<void> {
       await _repository.sendPasswordReset(email);
       state = const AsyncData(null);
     } catch (e, st) {
-      state = AsyncError(e, st);
+      final appException = AppErrorMapper.map(e, st);
+      _logger.e('Erro ao solicitar redefinição de senha no AuthController.', error: appException, stackTrace: st, context: {'email': email});
+      state = AsyncError(appException, st);
     }
   }
 
@@ -123,7 +145,9 @@ class AuthController extends AsyncNotifier<void> {
       await _repository.updatePassword(newPassword);
       state = const AsyncData(null);
     } catch (e, st) {
-      state = AsyncError(e, st);
+      final appException = AppErrorMapper.map(e, st);
+      _logger.e('Erro ao atualizar senha no AuthController.', error: appException, stackTrace: st);
+      state = AsyncError(appException, st);
     }
   }
 
@@ -133,7 +157,9 @@ class AuthController extends AsyncNotifier<void> {
       await _repository.signOut();
       state = const AsyncData(null);
     } catch (e, st) {
-      state = AsyncError(e, st);
+      final appException = AppErrorMapper.map(e, st);
+      _logger.e('Erro ao efetuar encerramento de sessão no AuthController.', error: appException, stackTrace: st);
+      state = AsyncError(appException, st);
     }
   }
 }
