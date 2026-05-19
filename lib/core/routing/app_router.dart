@@ -7,6 +7,7 @@ import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../../features/auth/presentation/screens/update_password_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
+import '../../features/user/presentation/screens/profile_screen.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
   // Escuta as mudanças no estado de autenticação (logado ou não)
@@ -64,6 +65,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/home',
         builder: (context, state) => const HomeScreen(),
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) => const ProfileScreen(),
       ),
     ],
   );

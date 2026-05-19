@@ -32,23 +32,65 @@ class AuthController extends AsyncNotifier<void> {
   Future<void> signIn(String email, String password) async {
     state = const AsyncLoading();
     try {
-      await _repository.signInWithEmail(email, password);
-      // Validar se o email está confirmado se a flag 'Email Confirm' estiver ativa no Supabase
-      if (_repository.currentUser != null && _repository.currentUser!.emailConfirmedAt == null) {
-        state = AsyncError('Por favor, verifique seu e-mail antes de fazer login.', StackTrace.current);
-        await _repository.signOut();
-        return;
+      // 1. Verificar se a conta está atualmente bloqueada
+      final lockStatus = await _repository.checkLock(email);
+      if (lockStatus['is_locked'] == true) {
+        final remainingSec = lockStatus['remaining_seconds'] as int? ?? 0;
+        final minutes = (remainingSec / 60).ceil();
+        throw Exception(
+          'Conta temporariamente bloqueada devido a 3 tentativas falhas. '
+          'Tente novamente em $minutes minuto(s).',
+        );
       }
-      state = const AsyncData(null);
+
+      // 2. Tentar o login
+      try {
+        await _repository.signInWithEmail(email, password);
+        
+        // Login com sucesso: reseta tentativas
+        await _repository.registerAttempt(email, true);
+
+        // Validar se o email está confirmado se a flag 'Email Confirm' estiver ativa no Supabase
+        if (_repository.currentUser != null && _repository.currentUser!.emailConfirmedAt == null) {
+          state = AsyncError('Por favor, verifique seu e-mail antes de fazer login.', StackTrace.current);
+          await _repository.signOut();
+          return;
+        }
+        state = const AsyncData(null);
+      } on AuthException catch (_) {
+        // Falha no login: registra tentativa malsucedida
+        await _repository.registerAttempt(email, false);
+
+        // Verifica se bloqueou após essa falha
+        final postLockStatus = await _repository.checkLock(email);
+        if (postLockStatus['is_locked'] == true) {
+          throw Exception('Usuário ou senha inválidos. Conta bloqueada por 15 minutos.');
+        }
+
+        // Mensagem padrão amigável exigida pelo IBL02
+        throw Exception('Usuário ou senha inválidos');
+      }
     } catch (e, st) {
       state = AsyncError(e, st);
     }
   }
 
-  Future<void> signUp(String email, String password) async {
+  Future<void> signUp({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+    required String location,
+  }) async {
     state = const AsyncLoading();
     try {
-      await _repository.signUp(email, password);
+      await _repository.signUp(
+        email: email,
+        password: password,
+        name: name,
+        phone: phone,
+        location: location,
+      );
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
