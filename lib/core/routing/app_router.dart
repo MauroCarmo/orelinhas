@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/auth/presentation/controllers/auth_controller.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
+import '../../features/auth/presentation/screens/update_password_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -14,7 +16,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/login',
     redirect: (context, state) {
       // Pega o status atual da sessão
-      final isAuthenticated = authState.value?.session != null;
+      final authStateVal = authState.value;
+      final isAuthenticated = authStateVal?.session != null;
+      final authEvent = authStateVal?.event;
+      
+      // Quando o deep link de recuperação de senha for clicado
+      if (authEvent == AuthChangeEvent.passwordRecovery && state.matchedLocation != '/update-password') {
+        return '/update-password';
+      }
       
       // Rotas públicas (que usuários não logados podem acessar)
       final isLoggingIn = state.matchedLocation == '/login' || 
@@ -22,7 +31,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                           state.matchedLocation == '/forgot-password';
 
       // Redirecionamento (Auth Guard)
-      if (!isAuthenticated && !isLoggingIn) {
+      if (!isAuthenticated && !isLoggingIn && state.matchedLocation != '/update-password') {
         // Bloqueia qualquer rota privada se não estiver logado
         return '/login';
       }
@@ -47,6 +56,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/forgot-password',
         builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/update-password',
+        builder: (context, state) => const UpdatePasswordScreen(),
       ),
       GoRoute(
         path: '/home',

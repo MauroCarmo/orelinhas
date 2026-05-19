@@ -43,11 +43,18 @@ class AuthRepository {
     );
   }
 
-  // Recuperação de senha
+  // Recuperação de senha (Dispara e-mail)
   Future<void> sendPasswordReset(String email) async {
     await _supabase.auth.resetPasswordForEmail(
       email,
       redirectTo: 'orelinhas://login-callback',
+    );
+  }
+
+  // Atualizar senha (Chamado na tela após clicar no link do e-mail)
+  Future<void> updatePassword(String newPassword) async {
+    await _supabase.auth.updateUser(
+      UserAttributes(password: newPassword),
     );
   }
 

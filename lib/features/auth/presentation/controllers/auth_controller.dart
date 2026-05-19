@@ -74,6 +74,16 @@ class AuthController extends AsyncNotifier<void> {
     }
   }
 
+  Future<void> updatePassword(String newPassword) async {
+    state = const AsyncLoading();
+    try {
+      await _repository.updatePassword(newPassword);
+      state = const AsyncData(null);
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
+  }
+
   Future<void> signOut() async {
     state = const AsyncLoading();
     try {
