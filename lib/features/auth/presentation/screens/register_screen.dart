@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/exceptions/app_exceptions.dart';
+import '../../../../core/validation/validators.dart';
+import '../../../../core/validation/sanitizers.dart';
+import '../../../../core/formatters/phone_input_formatter.dart';
 import '../controllers/auth_controller.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -35,27 +38,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return;
     }
 
+    // Sanitização e endurecimento de segurança na entrada
+    final name = AppSanitizers.sanitizeText(_nameController.text);
+    final email = AppSanitizers.normalizeEmail(_emailController.text);
+    final phone = AppSanitizers.digitsOnly(_phoneController.text);
+    final location = AppSanitizers.sanitizeText(_locationController.text);
+    final password = _passwordController.text; // Senhas não sofrem normalização destrutiva
+
     final authCtrl = ref.read(authControllerProvider.notifier);
     await authCtrl.signUp(
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
-      name: _nameController.text.trim(),
-      phone: _phoneController.text.trim(),
-      location: _locationController.text.trim(),
+      email: email,
+      password: password,
+      name: name,
+      phone: phone,
+      location: location,
     );
     
+    if (!mounted) return;
+    
     final state = ref.read(authControllerProvider);
-    if (state.hasError && mounted) {
-      String errorMessage = state.error.toString();
-      if (state.error is AuthException) {
-        errorMessage = (state.error as AuthException).message;
-      } else {
-        errorMessage = errorMessage.replaceAll('Exception: ', '');
-      }
+    if (state.hasError) {
+      final error = state.error;
+      final errorMessage = error is AppException ? error.message : 'Ocorreu um erro inesperado.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
       );
-    } else if (mounted) {
+    } else {
       setState(() {
         _registrationSuccess = true;
       });
@@ -118,11 +126,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.person),
                 ),
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Nome é obrigatório';
-                  if (val.length > 100) return 'Máximo 100 caracteres';
-                  return null;
-                },
+                validator: AppValidators.combine([
+                  AppValidators.required('Nome Completo'),
+                  AppValidators.maxLength(100, 'Nome Completo'),
+                ]),
               ),
               const SizedBox(height: 16),
 
@@ -135,13 +142,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   prefixIcon: Icon(Icons.email),
                 ),
                 keyboardType: TextInputType.emailAddress,
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'E-mail é obrigatório';
-                  if (val.length > 80) return 'Máximo 80 caracteres';
-                  final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                  if (!emailRegex.hasMatch(val.trim())) return 'E-mail inválido';
-                  return null;
-                },
+                validator: AppValidators.combine([
+                  AppValidators.required('E-mail'),
+                  AppValidators.maxLength(80, 'E-mail'),
+                  AppValidators.email(),
+                ]),
               ),
               const SizedBox(height: 16),
 
@@ -152,17 +157,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   labelText: 'Telefone *',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.phone),
-                  helperText: 'Apenas números com DDD',
+                  helperText: 'Ex: (11) 99999-9999',
                 ),
                 keyboardType: TextInputType.phone,
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Telefone é obrigatório';
-                  final clean = val.replaceAll(RegExp(r'[^0-9]'), '');
-                  if (clean.length < 8 || clean.length > 15) {
-                    return 'O telefone deve conter entre 8 e 15 números';
-                  }
-                  return null;
-                },
+                inputFormatters: [
+                  PhoneInputFormatter(),
+                ],
+                validator: AppValidators.combine([
+                  AppValidators.required('Telefone'),
+                  AppValidators.phone(),
+                ]),
               ),
               const SizedBox(height: 16),
 
@@ -173,12 +177,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   labelText: 'Cidade / Estado *',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.location_on),
+                  helperText: 'Ex: São Paulo - SP',
                 ),
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Localização é obrigatória';
-                  if (val.length > 150) return 'Máximo 150 caracteres';
-                  return null;
-                },
+                validator: AppValidators.combine([
+                  AppValidators.required('Cidade / Estado'),
+                  AppValidators.maxLength(150, 'Cidade / Estado'),
+                ]),
               ),
               const SizedBox(height: 16),
 
@@ -186,21 +190,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               TextFormField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
-                  labelText: 'Senha (mín. 6 caracteres) *',
+                  labelText: 'Senha (mín. 8 caracteres) *',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.lock),
                   helperText: 'Maiúscula, minúscula, número e caractere especial (@\$!%*?&.)',
                 ),
                 obscureText: true,
-                validator: (val) {
-                  if (val == null || val.isEmpty) return 'Senha é obrigatória';
-                  if (val.length < 6) return 'Mínimo de 6 caracteres';
-                  if (!RegExp(r'[A-Z]').hasMatch(val)) return 'Falta uma letra maiúscula';
-                  if (!RegExp(r'[a-z]').hasMatch(val)) return 'Falta uma letra minúscula';
-                  if (!RegExp(r'[0-9]').hasMatch(val)) return 'Falta pelo menos um número';
-                  if (!RegExp(r'[@$!%*?&.]').hasMatch(val)) return 'Falta um caractere especial';
-                  return null;
-                },
+                validator: AppValidators.combine([
+                  AppValidators.required('Senha'),
+                  AppValidators.passwordComplexity(),
+                ]),
               ),
               const SizedBox(height: 24),
 
