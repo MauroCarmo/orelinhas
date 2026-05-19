@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -15,10 +16,18 @@ class HomeScreen extends ConsumerWidget {
         title: const Text('Orelinhas - Home'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.account_circle),
+            onPressed: () {
+              context.push('/profile');
+            },
+            tooltip: 'Minha Conta',
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () {
               ref.read(authControllerProvider.notifier).signOut();
             },
+            tooltip: 'Sair',
           ),
         ],
       ),
