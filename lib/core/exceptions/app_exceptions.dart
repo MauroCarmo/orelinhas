@@ -54,6 +54,15 @@ class DatabaseException extends AppException {
   }) : super(message: message);
 }
 
+/// Exceção lançada quando ocorre um conflito de dados (como violação de chave única ou duplicidade).
+class ConflictException extends AppException {
+  const ConflictException(
+    String message, {
+    super.technicalMessage,
+    super.context,
+  }) : super(message: message);
+}
+
 /// Exceção lançada quando o usuário não possui privilégios de acesso para uma operação (ex: violação de RLS).
 class PermissionException extends AppException {
   const PermissionException(

@@ -36,6 +36,10 @@ class ProfileController extends AsyncNotifier<ProfileEntity?> {
 
   /// Atualiza o perfil do usuário e atualiza o estado local do Riverpod.
   Future<void> updateProfile(ProfileEntity profile) async {
+    if (state is AsyncLoading) {
+      _logger.w('Envio concorrente ignorado em updateProfile.');
+      return;
+    }
     state = const AsyncLoading();
     try {
       // 1. Executa as validações do modelo de domínio no controller (Defesa em Profundidade)
@@ -55,6 +59,10 @@ class ProfileController extends AsyncNotifier<ProfileEntity?> {
 
   /// Exclui permanentemente a conta e recarrega o estado.
   Future<void> deleteAccount() async {
+    if (state is AsyncLoading) {
+      _logger.w('Ação concorrente ignorada em deleteAccount.');
+      return;
+    }
     state = const AsyncLoading();
     final user = ref.read(currentUserProvider);
     final userId = user?.id ?? 'desconhecido';

@@ -71,13 +71,13 @@ class AppErrorMapper {
       if (code == '23505') {
         if (originalMessage.contains('profiles_email_key') ||
             originalMessage.contains('email')) {
-          return DatabaseException(
+          return ConflictException(
             'Este e-mail já está cadastrado.',
             technicalMessage: '${error.message} (Código: $code)',
             context: {'code': code, 'hint': error.hint},
           );
         }
-        return DatabaseException(
+        return ConflictException(
           'Este registro já existe no sistema.',
           technicalMessage: '${error.message} (Código: $code)',
           context: {'code': code, 'hint': error.hint},

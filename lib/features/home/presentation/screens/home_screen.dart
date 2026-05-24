@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/routing/app_routes.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -18,7 +19,7 @@ class HomeScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.account_circle),
             onPressed: () {
-              context.push('/profile');
+              context.push(AppRoutes.profile);
             },
             tooltip: 'Minha Conta',
           ),
@@ -43,6 +44,24 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             Text('Usuário: ${user?.email ?? "Desconhecido"}'),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.pets, color: Colors.white),
+              label: const Text(
+                'Alertas de Pets Perdidos',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                context.push(AppRoutes.petLost);
+              },
+            ),
           ],
         ),
       ),
