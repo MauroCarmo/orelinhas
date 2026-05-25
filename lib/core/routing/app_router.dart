@@ -11,6 +11,7 @@ import '../../features/user/presentation/screens/profile_screen.dart';
 import '../../features/pet_lost/presentation/screens/pet_lost_list_screen.dart';
 import '../../features/pet_lost/presentation/screens/create_pet_lost_screen.dart';
 import '../../features/user/presentation/screens/public_profile_screen.dart';
+import '../../features/pet_lost/presentation/screens/pet_lost_map_screen.dart';
 import 'app_routes.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -95,6 +96,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final userId = state.pathParameters['userId']!;
           return PublicProfileScreen(userId: userId);
         },
+      ),
+      GoRoute(
+        path: AppRoutes.petLostMap,
+        builder: (context, state) => const PetLostMapScreen(),
       ),
     ],
   );

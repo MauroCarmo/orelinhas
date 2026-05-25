@@ -8,11 +8,18 @@ enum PetType {
   String get name => toString().split('.').last;
 }
 
+enum AlertStatus {
+  active,
+  resolved;
+
+  String get name => toString().split('.').last;
+}
+
 class PetLostAlertEntity {
   final String id;
   final String userId;
   final String petName;
-  final PetType petType; // Enum safety
+  final PetType petType;
   final String? breed;
   final String? age;
   final String description;
@@ -21,6 +28,10 @@ class PetLostAlertEntity {
   final String contact;
   final String? imageUrl;
   final DateTime? createdAt;
+  // Novos campos
+  final double? latitude;
+  final double? longitude;
+  final AlertStatus status;
 
   const PetLostAlertEntity({
     required this.id,
@@ -35,6 +46,9 @@ class PetLostAlertEntity {
     required this.contact,
     this.imageUrl,
     this.createdAt,
+    this.latitude,
+    this.longitude,
+    this.status = AlertStatus.active,
   });
 
   factory PetLostAlertEntity.fromJson(Map<String, dynamic> json) {
@@ -42,6 +56,12 @@ class PetLostAlertEntity {
     final parsedPetType = PetType.values.firstWhere(
       (e) => e.name == petTypeStr,
       orElse: () => PetType.other,
+    );
+
+    final statusStr = json['status'] as String? ?? 'active';
+    final parsedStatus = AlertStatus.values.firstWhere(
+      (e) => e.name == statusStr,
+      orElse: () => AlertStatus.active,
     );
 
     return PetLostAlertEntity(
@@ -61,6 +81,13 @@ class PetLostAlertEntity {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
+      latitude: json['latitude'] != null
+          ? (json['latitude'] as num).toDouble()
+          : null,
+      longitude: json['longitude'] != null
+          ? (json['longitude'] as num).toDouble()
+          : null,
+      status: parsedStatus,
     );
   }
 
@@ -76,6 +103,9 @@ class PetLostAlertEntity {
       'lost_date': lostDate.toIso8601String(),
       'contact': contact,
       'image_url': imageUrl,
+      'latitude': latitude,
+      'longitude': longitude,
+      'status': status.name,
     };
     if (id.isNotEmpty) {
       map['id'] = id;
@@ -96,6 +126,9 @@ class PetLostAlertEntity {
     String? contact,
     String? imageUrl,
     DateTime? createdAt,
+    double? latitude,
+    double? longitude,
+    AlertStatus? status,
   }) {
     return PetLostAlertEntity(
       id: id ?? this.id,
@@ -110,66 +143,79 @@ class PetLostAlertEntity {
       contact: contact ?? this.contact,
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      status: status ?? this.status,
     );
   }
 
-  /// Validação estritamente síncrona que retorna uma lista de erros.
-  /// Se a entidade estiver totalmente válida, retorna uma lista vazia [].
   List<String> validate() {
     final List<String> errors = [];
 
-    // 1. Validação de petName
+    // Nome do Pet
     final nameError = AppValidators.combine([
       AppValidators.required('Nome do Pet'),
       AppValidators.maxLength(100, 'Nome do Pet'),
     ])(petName);
     if (nameError != null) errors.add(nameError);
 
-    // 2. Validação de petType (Não é mais necessária validação de string, pois é fortemente tipado)
-
-    // 3. Validação de breed (opcional)
+    // Raça (opcional)
     if (breed != null && breed!.isNotEmpty) {
       final breedError = AppValidators.maxLength(100, 'Raça')(breed);
       if (breedError != null) errors.add(breedError);
     }
 
-    // 4. Validação de age (opcional)
+    // Idade (opcional)
     if (age != null && age!.isNotEmpty) {
       final ageError = AppValidators.maxLength(50, 'Idade')(age);
       if (ageError != null) errors.add(ageError);
     }
 
-    // 5. Validação de description
+    // Descrição: obrigatório, min 10, max 255
     final descError = AppValidators.combine([
       AppValidators.required('Descrição'),
       AppValidators.minLength(10, 'Descrição'),
-      AppValidators.maxLength(1000, 'Descrição'),
+      AppValidators.maxLength(255, 'Descrição'),
     ])(description);
     if (descError != null) errors.add(descError);
 
-    // 6. Validação de lastLocation
+    // Última localização (texto): obrigatório, max 200
     final locError = AppValidators.combine([
       AppValidators.required('Última Localização'),
       AppValidators.maxLength(200, 'Última Localização'),
     ])(lastLocation);
     if (locError != null) errors.add(locError);
 
-    // 7. Validação de lostDate
+    // Data do desaparecimento
     if (lostDate.isAfter(DateTime.now())) {
       errors.add('A data do desaparecimento não pode ser no futuro.');
     }
 
-    // 8. Validação de contact (usando o validador de telefone core)
+    // Contato
     final contactError = AppValidators.combine([
       AppValidators.required('Contato'),
       AppValidators.phone(),
     ])(contact);
     if (contactError != null) errors.add(contactError);
 
-    // 9. Validação de imageUrl (opcional)
-    if (imageUrl != null && imageUrl!.isNotEmpty) {
+    // Foto obrigatória
+    if (imageUrl == null || imageUrl!.trim().isEmpty) {
+      errors.add('A foto do pet é obrigatória.');
+    } else {
       final urlError = AppValidators.maxLength(500, 'URL da Imagem')(imageUrl);
       if (urlError != null) errors.add(urlError);
+    }
+
+    // Coordenadas obrigatórias
+    if (latitude == null || longitude == null) {
+      errors.add('A localização exata (coordenadas) é obrigatória.');
+    } else {
+      if (latitude! < -90 || latitude! > 90) {
+        errors.add('Latitude inválida.');
+      }
+      if (longitude! < -180 || longitude! > 180) {
+        errors.add('Longitude inválida.');
+      }
     }
 
     return errors;

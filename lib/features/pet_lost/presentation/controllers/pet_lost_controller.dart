@@ -129,4 +129,35 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
       state = AsyncError(appException, st);
     }
   }
+
+  /// Marca um alerta como resolvido por ID com proteção contra ação concorrente.
+  Future<void> resolveAlert(String alertId) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) throw const AppAuthException('Usuário não autenticado.');
+
+    if (state.isLoading) {
+      _logger.w('Ação concorrente ignorada em resolveAlert.');
+      return;
+    }
+    state = const AsyncLoading();
+    try {
+      await _repository.resolveAlert(user.id, alertId);
+      final list = await _repository.getUserAlerts(user.id);
+      state = AsyncData(list);
+      ref.invalidate(publicPetLostControllerProvider);
+      _logger.i(
+        'Alerta resolvido com sucesso no controller.',
+        context: {'alertId': alertId},
+      );
+    } catch (e, st) {
+      final appException = AppErrorMapper.map(e, st);
+      _logger.e(
+        'Erro ao resolver alerta.',
+        error: appException,
+        stackTrace: st,
+        context: {'alertId': alertId},
+      );
+      state = AsyncError(appException, st);
+    }
+  }
 }

@@ -15,7 +15,8 @@ class PetLostListScreen extends ConsumerStatefulWidget {
   ConsumerState<PetLostListScreen> createState() => _PetLostListScreenState();
 }
 
-class _PetLostListScreenState extends ConsumerState<PetLostListScreen> with SingleTickerProviderStateMixin {
+class _PetLostListScreenState extends ConsumerState<PetLostListScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
@@ -32,30 +33,41 @@ class _PetLostListScreenState extends ConsumerState<PetLostListScreen> with Sing
 
   @override
   Widget build(BuildContext context) {
-    // Escuta erros e sucessos do controller privado globalmente
-    ref.listen<AsyncValue<List<PetLostAlertEntity>>>(petLostControllerProvider, (previous, next) {
-      next.whenOrNull(
-        error: (error, _) {
-          final errorMessage = error is AppException ? error.message : 'Ocorreu um erro inesperado.';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMessage),
-              backgroundColor: Colors.red,
-            ),
-          );
-        },
-      );
-    });
+    ref.listen<AsyncValue<List<PetLostAlertEntity>>>(
+      petLostControllerProvider,
+      (previous, next) {
+        next.whenOrNull(
+          error: (error, _) {
+            final errorMessage = error is AppException
+                ? error.message
+                : 'Ocorreu um erro inesperado.';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(errorMessage),
+                backgroundColor: Colors.red,
+              ),
+            );
+          },
+        );
+      },
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pets Perdidos'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.map),
+            onPressed: () => context.push(AppRoutes.petLostMap),
+            tooltip: 'Ver no Mapa',
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
               if (_tabController.index == 0) {
-                ref.read(publicPetLostControllerProvider.notifier).refreshAlerts();
+                ref
+                    .read(publicPetLostControllerProvider.notifier)
+                    .refreshAlerts();
               } else {
                 ref.read(petLostControllerProvider.notifier).refreshAlerts();
               }
@@ -73,10 +85,7 @@ class _PetLostListScreenState extends ConsumerState<PetLostListScreen> with Sing
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          PublicFeedTab(),
-          MyAlertsTab(),
-        ],
+        children: const [PublicFeedTab(), MyAlertsTab()],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push(AppRoutes.petLostCreate),
@@ -96,11 +105,17 @@ class PublicFeedTab extends ConsumerWidget {
     final alertsState = ref.watch(publicPetLostControllerProvider);
     final user = ref.watch(currentUserProvider);
 
+    final filteredAlerts = alertsState.whenData(
+      (alerts) =>
+          alerts.where((alert) => alert.userId != (user?.id ?? '')).toList(),
+    );
+
     return _AlertListBuilder(
-      alertsState: alertsState,
+      alertsState: filteredAlerts,
       emptyMessage: 'Nenhum pet perdido no momento. Tudo tranquilo por aqui!',
       currentUserId: user?.id,
-      onRefresh: () => ref.read(publicPetLostControllerProvider.notifier).refreshAlerts(),
+      onRefresh: () =>
+          ref.read(publicPetLostControllerProvider.notifier).refreshAlerts(),
     );
   }
 }
@@ -117,7 +132,8 @@ class MyAlertsTab extends ConsumerWidget {
       alertsState: alertsState,
       emptyMessage: 'Você não possui nenhum alerta de pet perdido cadastrado.',
       currentUserId: user?.id,
-      onRefresh: () => ref.read(petLostControllerProvider.notifier).refreshAlerts(),
+      onRefresh: () =>
+          ref.read(petLostControllerProvider.notifier).refreshAlerts(),
     );
   }
 }
@@ -154,12 +170,18 @@ class _AlertListBuilder extends ConsumerWidget {
     return '$day/$month/$year';
   }
 
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref, PetLostAlertEntity alert) async {
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    PetLostAlertEntity alert,
+  ) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Excluir Alerta'),
-        content: Text('Deseja realmente excluir permanentemente o alerta do pet "${alert.petName}"?'),
+        content: Text(
+          'Deseja realmente excluir permanentemente o alerta do pet "${alert.petName}"?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -179,6 +201,40 @@ class _AlertListBuilder extends ConsumerWidget {
     }
   }
 
+  Future<void> _confirmResolve(
+    BuildContext context,
+    WidgetRef ref,
+    PetLostAlertEntity alert,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pet Encontrado'),
+        content: Text(
+          'Deseja marcar o alerta de "${alert.petName}" como resolvido? Ele sairá da lista pública.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Sim, foi encontrado',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref.read(petLostControllerProvider.notifier).resolveAlert(alert.id);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return alertsState.when(
@@ -190,11 +246,19 @@ class _AlertListBuilder extends ConsumerWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.pets_outlined, size: 72, color: Colors.blueGrey),
+                  const Icon(
+                    Icons.pets_outlined,
+                    size: 72,
+                    color: Colors.blueGrey,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     emptyMessage,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueGrey,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -209,17 +273,22 @@ class _AlertListBuilder extends ConsumerWidget {
           itemBuilder: (context, index) {
             final alert = alerts[index];
             final isOwner = alert.userId == currentUserId;
+            final isResolved = alert.status == AlertStatus.resolved;
 
             return Card(
               elevation: 3,
               margin: const EdgeInsets.symmetric(vertical: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (alert.imageUrl != null && alert.imageUrl!.isNotEmpty)
                     ClipRRect(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
                       child: Image.network(
                         alert.imageUrl!,
                         height: 180,
@@ -227,7 +296,11 @@ class _AlertListBuilder extends ConsumerWidget {
                         errorBuilder: (context, error, stackTrace) => Container(
                           height: 180,
                           color: Colors.grey[200],
-                          child: const Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                          child: const Icon(
+                            Icons.broken_image,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
                         ),
                       ),
                     ),
@@ -242,36 +315,65 @@ class _AlertListBuilder extends ConsumerWidget {
                             Expanded(
                               child: Text(
                                 alert.petName,
-                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: alert.petType == PetType.dog
-                                    ? Colors.blue[100]
-                                    : alert.petType == PetType.cat
+                            Row(
+                              children: [
+                                if (isResolved)
+                                  Container(
+                                    margin: const EdgeInsets.only(right: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green[100],
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      'Resolvido',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: alert.petType == PetType.dog
+                                        ? Colors.blue[100]
+                                        : alert.petType == PetType.cat
                                         ? Colors.orange[100]
                                         : Colors.green[100],
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                alert.petType == PetType.dog
-                                    ? 'Cachorro'
-                                    : alert.petType == PetType.cat
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    alert.petType == PetType.dog
+                                        ? 'Cachorro'
+                                        : alert.petType == PetType.cat
                                         ? 'Gato'
                                         : 'Outro',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: alert.petType == PetType.dog
-                                      ? Colors.blue[900]
-                                      : alert.petType == PetType.cat
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: alert.petType == PetType.dog
+                                          ? Colors.blue[900]
+                                          : alert.petType == PetType.cat
                                           ? Colors.orange[900]
                                           : Colors.green[900],
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ],
                         ),
@@ -279,31 +381,47 @@ class _AlertListBuilder extends ConsumerWidget {
                         if (alert.breed != null && alert.breed!.isNotEmpty)
                           Text(
                             'Raça: ${alert.breed}',
-                            style: const TextStyle(fontSize: 14, color: Colors.black87),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.black87,
+                            ),
                           ),
                         if (alert.age != null && alert.age!.isNotEmpty)
                           Text(
                             'Idade: ${alert.age}',
-                            style: const TextStyle(fontSize: 14, color: Colors.black87),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.black87,
+                            ),
                           ),
                         const SizedBox(height: 8),
                         const Divider(),
                         const SizedBox(height: 4),
                         Text(
                           alert.description,
-                          style: const TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontStyle: FontStyle.italic,
+                          ),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Icon(Icons.location_on, size: 16, color: Colors.redAccent),
+                            const Icon(
+                              Icons.location_on,
+                              size: 16,
+                              color: Colors.redAccent,
+                            ),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
                                 'Último local: ${alert.lastLocation}',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -313,22 +431,37 @@ class _AlertListBuilder extends ConsumerWidget {
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.calendar_month, size: 16, color: Colors.blueGrey),
+                            const Icon(
+                              Icons.calendar_month,
+                              size: 16,
+                              color: Colors.blueGrey,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               'Desaparecido em: ${_formatDate(alert.lostDate)}',
-                              style: const TextStyle(fontSize: 13, color: Colors.black54),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.black54,
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.phone, size: 16, color: Colors.green),
+                            const Icon(
+                              Icons.phone,
+                              size: 16,
+                              color: Colors.green,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               'Contato: ${_formatPhone(alert.contact)}',
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
                             ),
                           ],
                         ),
@@ -340,14 +473,40 @@ class _AlertListBuilder extends ConsumerWidget {
                               TextButton.icon(
                                 icon: const Icon(Icons.edit, size: 18),
                                 label: const Text('Editar'),
-                                onPressed: () => context.push(AppRoutes.petLostEdit(alert.id)),
+                                onPressed: () => context.push(
+                                  AppRoutes.petLostEdit(alert.id),
+                                ),
                               ),
                               const SizedBox(width: 8),
                               TextButton.icon(
-                                icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                label: const Text('Excluir', style: TextStyle(color: Colors.red)),
-                                onPressed: () => _confirmDelete(context, ref, alert),
+                                icon: const Icon(
+                                  Icons.delete,
+                                  size: 18,
+                                  color: Colors.red,
+                                ),
+                                label: const Text(
+                                  'Excluir',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                                onPressed: () =>
+                                    _confirmDelete(context, ref, alert),
                               ),
+                              if (!isResolved) ...[
+                                const SizedBox(width: 8),
+                                TextButton.icon(
+                                  icon: const Icon(
+                                    Icons.check_circle,
+                                    size: 18,
+                                    color: Colors.orange,
+                                  ),
+                                  label: const Text(
+                                    'Marcar Encontrado',
+                                    style: TextStyle(color: Colors.orange),
+                                  ),
+                                  onPressed: () =>
+                                      _confirmResolve(context, ref, alert),
+                                ),
+                              ],
                             ],
                           )
                         else
@@ -384,14 +543,27 @@ class _AlertListBuilder extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, _) {
-        final errMsg = err is AppException ? err.message : 'Falha ao carregar alertas.';
+        final errMsg = err is AppException
+            ? err.message
+            : 'Falha ao carregar alertas.';
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
+              const Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.redAccent,
+              ),
               const SizedBox(height: 16),
-              Text(errMsg, style: const TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.w500)),
+              Text(
+                errMsg,
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: onRefresh,

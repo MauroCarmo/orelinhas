@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/formatters/phone_input_formatter.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
@@ -10,13 +13,11 @@ import '../../domain/pet_lost_entity.dart';
 class CreatePetLostScreen extends ConsumerStatefulWidget {
   final String? alertId;
 
-  const CreatePetLostScreen({
-    super.key,
-    this.alertId,
-  });
+  const CreatePetLostScreen({super.key, this.alertId});
 
   @override
-  ConsumerState<CreatePetLostScreen> createState() => _CreatePetLostScreenState();
+  ConsumerState<CreatePetLostScreen> createState() =>
+      _CreatePetLostScreenState();
 }
 
 class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
@@ -33,6 +34,11 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
   PetType _selectedType = PetType.dog;
   DateTime _selectedDate = DateTime.now();
   bool _controllersInitialized = false;
+
+  // Coordenadas selecionadas no mapa
+  LatLng? _selectedLocation;
+  // Controlador do mapa (para animações)
+  final MapController _mapController = MapController();
 
   @override
   void initState() {
@@ -55,6 +61,7 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     _lastLocationController.dispose();
     _contactController.dispose();
     _imageUrlController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -69,14 +76,22 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       _selectedDate = alert.lostDate;
       _imageUrlController.text = alert.imageUrl ?? '';
 
+      // Inicializa coordenadas se existirem
+      if (alert.latitude != null && alert.longitude != null) {
+        _selectedLocation = LatLng(alert.latitude!, alert.longitude!);
+        _mapController.move(_selectedLocation!, 15.0);
+      }
+
       // Formata o telefone para exibição visual
       final rawPhone = alert.contact;
       if (rawPhone.length >= 10) {
         final ddd = rawPhone.substring(0, 2);
         if (rawPhone.length == 11) {
-          _contactController.text = '($ddd) ${rawPhone.substring(2, 7)}-${rawPhone.substring(7)}';
+          _contactController.text =
+              '($ddd) ${rawPhone.substring(2, 7)}-${rawPhone.substring(7)}';
         } else {
-          _contactController.text = '($ddd) ${rawPhone.substring(2, 6)}-${rawPhone.substring(6)}';
+          _contactController.text =
+              '($ddd) ${rawPhone.substring(2, 6)}-${rawPhone.substring(6)}';
         }
       } else {
         _contactController.text = rawPhone;
@@ -123,16 +138,21 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: errors
-                .map((err) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
-                          Expanded(child: Text(err)),
-                        ],
-                      ),
-                    ))
+                .map(
+                  (err) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '• ',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Expanded(child: Text(err)),
+                      ],
+                    ),
+                  ),
+                )
                 .toList(),
           ),
         ),
@@ -146,16 +166,57 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     );
   }
 
+  // Obtém a localização atual e move o marcador
+  Future<void> _useCurrentLocation() async {
+    try {
+      // Verifica permissão
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _showErrorDialog(context, [
+            'Permissão de localização negada. Você pode definir a localização manualmente no mapa.',
+          ]);
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _showErrorDialog(context, [
+          'Permissão de localização permanentemente negada. Ative nas configurações do dispositivo.',
+        ]);
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      setState(() {
+        _selectedLocation = LatLng(position.latitude, position.longitude);
+        _mapController.move(_selectedLocation!, 15.0);
+      });
+    } catch (e) {
+      _showErrorDialog(context, [
+        'Não foi possível obter a localização atual.',
+      ]);
+    }
+  }
+
   Future<void> _submitForm() async {
     final user = ref.read(currentUserProvider);
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Usuário não autenticado.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Usuário não autenticado.'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
-    // Instancia a Entidade com valores brutos dos campos de input (Domínio)
     final tempEntity = PetLostAlertEntity(
       id: widget.alertId ?? '',
       userId: user.id,
@@ -168,16 +229,16 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       lostDate: _selectedDate,
       contact: _contactController.text,
       imageUrl: _imageUrlController.text,
+      latitude: _selectedLocation?.latitude,
+      longitude: _selectedLocation?.longitude,
     );
 
-    // Validação estrita acumulativa a nível de domínio (Única Fonte de Validação)
     final errors = tempEntity.validate();
     if (errors.isNotEmpty) {
       _showErrorDialog(context, errors);
       return;
     }
 
-    // Se estiver válido, despacha para o controller
     final controller = ref.read(petLostControllerProvider.notifier);
     if (widget.alertId != null) {
       await controller.updateAlert(tempEntity.copyWith(id: widget.alertId));
@@ -190,23 +251,26 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
   Widget build(BuildContext context) {
     final controllerState = ref.watch(petLostControllerProvider);
 
-    // Escuta reativamente as mudanças de estado para pop/erro
     ref.listen<AsyncValue<List<PetLostAlertEntity>>>(
       petLostControllerProvider,
       (previous, next) {
         if (previous is AsyncLoading && next is AsyncData) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(widget.alertId != null
-                  ? 'Alerta atualizado com sucesso!'
-                  : 'Alerta registrado com sucesso!'),
+              content: Text(
+                widget.alertId != null
+                    ? 'Alerta atualizado com sucesso!'
+                    : 'Alerta registrado com sucesso!',
+              ),
               backgroundColor: Colors.green,
             ),
           );
           context.pop();
         } else if (next is AsyncError) {
           final err = next.error;
-          final errMsg = err is AppException ? err.message : 'Erro ao salvar alerta.';
+          final errMsg = err is AppException
+              ? err.message
+              : 'Erro ao salvar alerta.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
           );
@@ -214,16 +278,13 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       },
     );
 
-    // Se for modo de edição, busca os dados existentes
     if (widget.alertId != null) {
       controllerState.maybeWhen(
         data: (alerts) {
           try {
             final alert = alerts.firstWhere((e) => e.id == widget.alertId);
             _initializeControllers(alert);
-          } catch (_) {
-            // Se o alerta não foi encontrado
-          }
+          } catch (_) {}
         },
         orElse: () {},
       );
@@ -233,7 +294,9 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.alertId != null ? 'Editar Alerta' : 'Novo Alerta de Pet'),
+        title: Text(
+          widget.alertId != null ? 'Editar Alerta' : 'Novo Alerta de Pet',
+        ),
       ),
       body: isLoading && !_controllersInitialized && widget.alertId != null
           ? const Center(child: CircularProgressIndicator())
@@ -246,11 +309,13 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                   children: [
                     const Text(
                       'Informações do Pet',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueGrey,
+                      ),
                     ),
                     const SizedBox(height: 16),
-
-                    // Campo Nome do Pet (sem TextFormField.validator!)
                     TextFormField(
                       controller: _nameController,
                       decoration: const InputDecoration(
@@ -261,8 +326,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
-
-                    // Dropdown de Tipo de Pet
                     DropdownButtonFormField<PetType>(
                       initialValue: _selectedType,
                       decoration: const InputDecoration(
@@ -271,9 +334,18 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                         prefixIcon: Icon(Icons.category),
                       ),
                       items: const [
-                        DropdownMenuItem(value: PetType.dog, child: Text('Cachorro')),
-                        DropdownMenuItem(value: PetType.cat, child: Text('Gato')),
-                        DropdownMenuItem(value: PetType.other, child: Text('Outro')),
+                        DropdownMenuItem(
+                          value: PetType.dog,
+                          child: Text('Cachorro'),
+                        ),
+                        DropdownMenuItem(
+                          value: PetType.cat,
+                          child: Text('Gato'),
+                        ),
+                        DropdownMenuItem(
+                          value: PetType.other,
+                          child: Text('Outro'),
+                        ),
                       ],
                       onChanged: isLoading
                           ? null
@@ -286,8 +358,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                             },
                     ),
                     const SizedBox(height: 16),
-
-                    // Campo Raça
                     TextFormField(
                       controller: _breedController,
                       decoration: const InputDecoration(
@@ -298,8 +368,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
-
-                    // Campo Idade
                     TextFormField(
                       controller: _ageController,
                       decoration: const InputDecoration(
@@ -311,30 +379,30 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
-
                     const Divider(),
                     const SizedBox(height: 8),
                     const Text(
                       'Detalhes do Desaparecimento',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueGrey,
+                      ),
                     ),
                     const SizedBox(height: 16),
-
-                    // Campo Descrição
                     TextFormField(
                       controller: _descriptionController,
                       decoration: const InputDecoration(
                         labelText: 'Descrição do ocorrido *',
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.description),
-                        helperText: 'Mínimo de 10 caracteres. Detalhe como ele sumiu.',
+                        helperText: 'Mínimo de 10 caracteres, máximo 255.',
                       ),
                       maxLines: 3,
+                      maxLength: 255,
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
-
-                    // Campo Último Local
                     TextFormField(
                       controller: _lastLocationController,
                       decoration: const InputDecoration(
@@ -346,8 +414,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
-
-                    // Data do Desaparecimento
                     InkWell(
                       onTap: isLoading ? null : () => _selectDate(context),
                       child: InputDecorator(
@@ -366,8 +432,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-
-                    // Campo Contato (Visual Formatting Mask Only)
                     TextFormField(
                       controller: _contactController,
                       decoration: const InputDecoration(
@@ -377,28 +441,95 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                         helperText: 'Ex: (11) 99999-9999',
                       ),
                       keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        PhoneInputFormatter(),
-                      ],
+                      inputFormatters: [PhoneInputFormatter()],
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
-
-                    // Campo URL da Imagem
                     TextFormField(
                       controller: _imageUrlController,
                       decoration: const InputDecoration(
-                        labelText: 'URL da Imagem do Pet (Opcional)',
+                        labelText: 'URL da Imagem do Pet *',
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.image),
-                        helperText: 'Link público da imagem para ajudar na identificação.',
+                        helperText: 'Link público da imagem (obrigatório).',
                       ),
                       keyboardType: TextInputType.url,
                       enabled: !isLoading,
                     ),
+                    const SizedBox(height: 16),
+
+                    // Seção de seleção de localização no mapa
+                    const Text(
+                      'Localização Exata no Mapa',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueGrey,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.my_location),
+                      label: const Text('Usar minha localização atual'),
+                      onPressed: isLoading ? null : _useCurrentLocation,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _selectedLocation == null
+                          ? 'Nenhuma localização selecionada. Arraste o marcador no mapa.'
+                          : 'Selecionado: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 300,
+                      child: FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(
+                          initialCenter:
+                              _selectedLocation ??
+                              const LatLng(-23.5505, -46.6333),
+                          initialZoom: 15.0,
+                          onTap: (tapPosition, point) {
+                            setState(() {
+                              _selectedLocation = point;
+                            });
+                          },
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.example.app',
+                          ),
+                          if (_selectedLocation != null)
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: _selectedLocation!,
+                                  width: 40,
+                                  height: 40,
+                                  child: GestureDetector(
+                                    onPanUpdate: (details) {
+                                      // Não necessário, mas podemos permitir arrastar
+                                    },
+                                    child: const Icon(
+                                      Icons.location_on,
+                                      color: Colors.red,
+                                      size: 40,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 32),
 
-                    // Botões de Ação
                     if (isLoading)
                       const Center(child: CircularProgressIndicator())
                     else ...[
@@ -409,8 +540,13 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                         ),
                         onPressed: _submitForm,
                         child: Text(
-                          widget.alertId != null ? 'Salvar Alterações' : 'Criar Alerta',
-                          style: const TextStyle(fontSize: 16, color: Colors.white),
+                          widget.alertId != null
+                              ? 'Salvar Alterações'
+                              : 'Criar Alerta',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),

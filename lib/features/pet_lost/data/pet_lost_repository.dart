@@ -25,6 +25,7 @@ class PetLostRepository {
       final data = await _supabase
           .from('pet_lost_alerts')
           .select()
+          .eq('status', 'active')
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
 
@@ -138,6 +139,31 @@ class PetLostRepository {
       _logger.i('Alerta de pet perdido excluído com sucesso.', context: {'alertId': id, 'userId': userId});
     } catch (e, st) {
       _logger.e('Erro técnico ao excluir alerta no Supabase.', error: e, stackTrace: st, context: {'alertId': id, 'userId': userId});
+      throw AppErrorMapper.map(e, st);
+    }
+  }
+
+  /// Marca um alerta como resolvido (status = 'resolved').
+  Future<void> resolveAlert(String userId, String alertId) async {
+    _logger.i(
+      'Marcando alerta como resolvido.',
+      context: {'alertId': alertId, 'userId': userId},
+    );
+
+    try {
+      await _supabase
+          .from('pet_lost_alerts')
+          .update({'status': 'resolved'})
+          .eq('id', alertId)
+          .eq('user_id', userId); // Defensive Query Design
+      _logger.i('Alerta resolvido com sucesso.', context: {'alertId': alertId});
+    } catch (e, st) {
+      _logger.e(
+        'Erro ao marcar alerta como resolvido.',
+        error: e,
+        stackTrace: st,
+        context: {'alertId': alertId},
+      );
       throw AppErrorMapper.map(e, st);
     }
   }

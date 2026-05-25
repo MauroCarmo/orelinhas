@@ -7,6 +7,7 @@ class AppRoutes {
   static const String profile = '/profile';
   static const String petLost = '/pet-lost';
   static const String petLostCreate = '/pet-lost/create';
+  static const String petLostMap = '/pet-lost-map';
   
   // Rota com parâmetro dinâmico
   static String petLostEdit(String id) => '/pet-lost/edit/$id';
