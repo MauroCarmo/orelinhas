@@ -10,6 +10,7 @@ class ProfileEntity {
   final AddressEntity address;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String? avatarUrl;
 
   ProfileEntity({
     required this.id,
@@ -20,6 +21,7 @@ class ProfileEntity {
     required this.address,
     this.createdAt,
     this.updatedAt,
+    this.avatarUrl,
   });
 
   factory ProfileEntity.fromJson(Map<String, dynamic> json) {
@@ -36,6 +38,7 @@ class ProfileEntity {
       updatedAt: json['updated_at'] != null 
           ? DateTime.parse(json['updated_at'] as String) 
           : null,
+      avatarUrl: json['avatar_url'] as String? ?? null,
     );
   }
 
@@ -46,6 +49,7 @@ class ProfileEntity {
       'phone': phone,
       'email': email,
       'location': location,
+      'avatar_url': avatarUrl,
       ...address.toJson(),
     };
   }
@@ -59,6 +63,7 @@ class ProfileEntity {
     AddressEntity? address,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? avatarUrl,
   }) {
     return ProfileEntity(
       id: id ?? this.id,
@@ -69,6 +74,7 @@ class ProfileEntity {
       address: address ?? this.address,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
     );
   }
 

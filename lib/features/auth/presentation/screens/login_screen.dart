@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/validation/sanitizers.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
+import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../controllers/auth_controller.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -56,25 +59,64 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isLoading = authState.isLoading;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrar')),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            const Icon(Icons.pets, color: AppColors.primary, size: 24),
+            const SizedBox(width: 8),
+            Text('Orelinhas', style: AppTextStyles.heading2(color: AppColors.primary)),
+          ],
+        ),
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(25, 40, 25, 90),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Bem-vindo ao Orelinhas', style: AppTextStyles.heading1()),
+            const SizedBox(height: 8),
+            Text(
+              'Autentique sua conta para sincronizar dados e monitorar alertas biométricos.',
+              style: AppTextStyles.body(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 35),
+            
+            // Email Input
+            Text(
+              'E-mail ou Usuário',
+              style: AppTextStyles.label(),
+            ),
+            const SizedBox(height: 6),
             TextField(
               controller: _emailController,
-              decoration: const InputDecoration(labelText: 'E-mail', border: OutlineInputBorder()),
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: 'beatriz.oliveira@email.com',
+                prefixIcon: const Icon(Icons.email, size: 20),
+              ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 16),
+            
+            // Password Input
+            Text(
+              'Senha de Acesso',
+              style: AppTextStyles.label(),
+            ),
+            const SizedBox(height: 6),
             TextField(
               controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'Senha', border: OutlineInputBorder()),
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: '••••••••',
+                prefixIcon: const Icon(Icons.lock, size: 20),
+              ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
               obscureText: true,
             ),
             const SizedBox(height: 8),
+            
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
@@ -82,23 +124,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: const Text('Esqueceu a senha?'),
               ),
             ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: isLoading ? null : _login,
-              child: isLoading 
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Entrar'),
+            const SizedBox(height: 24),
+            
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: AppButtonStyles.primary(),
+                onPressed: isLoading ? null : _login,
+                child: isLoading 
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
+                    : const Text('Acessar Ecossistema'),
+              ),
             ),
             const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: isLoading ? null : _loginWithGoogle,
-              icon: const Icon(Icons.g_mobiledata, size: 32),
-              label: const Text('Entrar com Google'),
+            
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: AppButtonStyles.outlined(),
+                onPressed: isLoading ? null : _loginWithGoogle,
+                icon: const Icon(Icons.g_mobiledata, size: 28),
+                label: const Text('Entrar com Google'),
+              ),
             ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () => context.push('/register'),
-              child: const Text('Não tem uma conta? Registre-se'),
+            const SizedBox(height: 24),
+            
+            Center(
+              child: TextButton(
+                onPressed: () => context.push('/register'),
+                child: const Text('Não tem uma conta? Registre-se'),
+              ),
             )
           ],
         ),

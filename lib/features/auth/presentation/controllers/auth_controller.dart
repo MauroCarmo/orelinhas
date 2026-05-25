@@ -33,6 +33,10 @@ class AuthController extends AsyncNotifier<void> {
   }
 
   Future<void> signIn(String email, String password) async {
+    if (state is AsyncLoading) {
+      _logger.w('Ação concorrente ignorada em signIn.');
+      return;
+    }
     state = const AsyncLoading();
     try {
       // 1. Verificar se a conta está atualmente bloqueada
@@ -98,6 +102,10 @@ class AuthController extends AsyncNotifier<void> {
     required String phone,
     required String location,
   }) async {
+    if (state is AsyncLoading) {
+      _logger.w('Ação concorrente ignorada em signUp.');
+      return;
+    }
     state = const AsyncLoading();
     try {
       await _repository.signUp(
@@ -116,6 +124,10 @@ class AuthController extends AsyncNotifier<void> {
   }
 
   Future<void> signInWithGoogle() async {
+    if (state is AsyncLoading) {
+      _logger.w('Ação concorrente ignorada em signInWithGoogle.');
+      return;
+    }
     state = const AsyncLoading();
     try {
       await _repository.signInWithGoogle();
@@ -128,6 +140,10 @@ class AuthController extends AsyncNotifier<void> {
   }
 
   Future<void> sendPasswordReset(String email) async {
+    if (state is AsyncLoading) {
+      _logger.w('Ação concorrente ignorada em sendPasswordReset.');
+      return;
+    }
     state = const AsyncLoading();
     try {
       await _repository.sendPasswordReset(email);
@@ -140,6 +156,10 @@ class AuthController extends AsyncNotifier<void> {
   }
 
   Future<void> updatePassword(String newPassword) async {
+    if (state is AsyncLoading) {
+      _logger.w('Ação concorrente ignorada em updatePassword.');
+      return;
+    }
     state = const AsyncLoading();
     try {
       await _repository.updatePassword(newPassword);
@@ -152,6 +172,10 @@ class AuthController extends AsyncNotifier<void> {
   }
 
   Future<void> signOut() async {
+    if (state is AsyncLoading) {
+      _logger.w('Ação concorrente ignorada em signOut.');
+      return;
+    }
     state = const AsyncLoading();
     try {
       await _repository.signOut();
