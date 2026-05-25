@@ -507,10 +507,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                     padding: const EdgeInsets.all(16),
                     child: Column(
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 32),
-                        const SizedBox(height: 8),
-                        const SizedBox(height: 4),
+                      children: [     
                         Text(
                           'A exclusão da conta é permanente e removerá todos os seus alertas ativos.',
                           style: AppTextStyles.bodySmall(),
