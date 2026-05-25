@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/validation/validators.dart';
 import '../../../../core/validation/sanitizers.dart';
@@ -7,6 +9,7 @@ import '../../../../core/formatters/phone_input_formatter.dart';
 import '../../../../core/formatters/cep_input_formatter.dart';
 import '../../../../core/domain/address/address_entity.dart';
 import '../../../../core/services/viacep_service.dart';
+import '../../../../core/services/storage_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../../core/theme/widgets/app_input_decoration.dart';
@@ -25,7 +28,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
-  
+
   // Controllers do Endereço Estruturado
   late TextEditingController _cepController;
   late TextEditingController _streetController;
@@ -38,6 +41,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _controllersInitialized = false;
   String _lastCheckedCep = '';
   bool _isLoadingCep = false;
+
+  // Avatar
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageFileName;
+  String? _existingAvatarUrl;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -97,12 +106,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
-        final errorMessage = e is AppException ? e.message : 'Falha ao buscar o CEP.';
+        final errorMessage = e is AppException
+            ? e.message
+            : 'Falha ao buscar o CEP.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -117,15 +125,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void _initializeControllers(ProfileEntity profile) {
     if (!_controllersInitialized) {
       _nameController.text = profile.name;
-      
+      _existingAvatarUrl = profile.avatarUrl;
+
       // Formata o telefone se necessário
       final rawPhone = profile.phone;
       if (rawPhone.length >= 10) {
         final ddd = rawPhone.substring(0, 2);
         if (rawPhone.length == 11) {
-          _phoneController.text = '($ddd) ${rawPhone.substring(2, 7)}-${rawPhone.substring(7)}';
+          _phoneController.text =
+              '($ddd) ${rawPhone.substring(2, 7)}-${rawPhone.substring(7)}';
         } else {
-          _phoneController.text = '($ddd) ${rawPhone.substring(2, 6)}-${rawPhone.substring(6)}';
+          _phoneController.text =
+              '($ddd) ${rawPhone.substring(2, 6)}-${rawPhone.substring(6)}';
         }
       } else {
         _phoneController.text = rawPhone;
@@ -134,7 +145,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       // Formata o CEP se necessário
       final rawCep = profile.address.cep;
       if (rawCep.length == 8) {
-        _cepController.text = '${rawCep.substring(0, 5)}-${rawCep.substring(5)}';
+        _cepController.text =
+            '${rawCep.substring(0, 5)}-${rawCep.substring(5)}';
         _lastCheckedCep = rawCep;
       } else {
         _cepController.text = rawCep;
@@ -146,18 +158,89 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _cityController.text = profile.address.city;
       _stateController.text = profile.address.state;
       _complementController.text = profile.address.complement;
-      
+
       _controllersInitialized = true;
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _selectedImageBytes = bytes;
+          _selectedImageFileName = image.name;
+          _existingAvatarUrl = null; // substitui URL existente
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erro ao selecionar imagem.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<String?> _uploadAvatarIfNeeded() async {
+    // Mantém URL existente se não selecionou nova imagem
+    if (_selectedImageBytes == null &&
+        _existingAvatarUrl != null &&
+        _existingAvatarUrl!.isNotEmpty) {
+      return _existingAvatarUrl;
+    }
+
+    // Se não tem imagem nova e nem URL antiga, retorna null (perfil sem avatar)
+    if (_selectedImageBytes == null) {
+      return null;
+    }
+
+    final user = ref.read(currentUserProvider);
+    final storageService = ref.read(storageServiceProvider);
+
+    try {
+      final url = await storageService.uploadImage(
+        bytes: _selectedImageBytes!,
+        fileName: _selectedImageFileName ?? 'avatar.jpg',
+        bucket: 'avatars',
+        folder: user?.id,
+      );
+      return url;
+    } on ValidationException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+      );
+      return null;
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Falha ao enviar imagem.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return null;
     }
   }
 
   Future<void> _saveChanges(ProfileEntity currentProfile) async {
     if (_formKey.currentState!.validate()) {
+      // Upload do avatar antes de salvar
+      final avatarUrl = await _uploadAvatarIfNeeded();
+      if (_selectedImageBytes != null && avatarUrl == null) {
+        // Falha no upload, não prossegue
+        return;
+      }
+
       // Sanitização técnica agressiva (apenas números e caracteres limpos)
       final name = AppSanitizers.sanitizeText(_nameController.text);
       final phone = AppSanitizers.digitsOnly(_phoneController.text);
       final cep = AppSanitizers.digitsOnly(_cepController.text);
-      
+
       // Sanitização não destrutiva para entradas livres humanas
       final street = AppSanitizers.sanitizeText(_streetController.text);
       final number = AppSanitizers.sanitizeText(_numberController.text);
@@ -173,6 +256,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         name: name,
         phone: phone,
         location: location,
+        avatarUrl: avatarUrl ?? currentProfile.avatarUrl,
         address: AddressEntity(
           cep: cep,
           street: street,
@@ -193,7 +277,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return;
       }
 
-      await ref.read(profileControllerProvider.notifier).updateProfile(updatedProfile);
+      await ref
+          .read(profileControllerProvider.notifier)
+          .updateProfile(updatedProfile);
     }
   }
 
@@ -230,15 +316,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final profileState = ref.watch(profileControllerProvider);
 
     // Escuta erros e sucessos do controller do perfil
-    ref.listen<AsyncValue<ProfileEntity?>>(profileControllerProvider, (previous, next) {
+    ref.listen<AsyncValue<ProfileEntity?>>(profileControllerProvider, (
+      previous,
+      next,
+    ) {
       next.whenOrNull(
         error: (error, _) {
-          final errorMessage = error is AppException ? error.message : 'Ocorreu um erro inesperado.';
+          final errorMessage = error is AppException
+              ? error.message
+              : 'Ocorreu um erro inesperado.';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMessage),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
           );
         },
         data: (profile) {
@@ -270,7 +358,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       body: profileState.when(
         data: (profile) {
           if (profile == null) {
-            return const Center(child: Text('Nenhum dado de perfil encontrado.'));
+            return const Center(
+              child: Text('Nenhum dado de perfil encontrado.'),
+            );
           }
 
           _initializeControllers(profile);
@@ -282,33 +372,57 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Avatar com upload
                   Center(
-                    child: Container(
-                      width: 100,
-                      height: 100,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [AppColors.primary, AppColors.accent],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                    child: GestureDetector(
+                      onTap: _pickImage,
+                      child: CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.blueGrey[100],
+                        backgroundImage: _selectedImageBytes != null
+                            ? MemoryImage(_selectedImageBytes!)
+                            : (_existingAvatarUrl != null &&
+                                      _existingAvatarUrl!.isNotEmpty
+                                  ? NetworkImage(_existingAvatarUrl!)
+                                  : null),
+                        child:
+                            (_selectedImageBytes == null &&
+                                (_existingAvatarUrl == null ||
+                                    _existingAvatarUrl!.isEmpty))
+                            ? const Icon(
+                                Icons.camera_alt,
+                                size: 40,
+                                color: Colors.white,
+                              )
+                            : null,
                       ),
-                      child: const Icon(Icons.person, size: 50, color: Colors.white),
                     ),
                   ),
-                  const SizedBox(height: 32),
-                  
-                  Text('INFORMAÇÕES PESSOAIS', style: AppTextStyles.sectionHeader()),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: _pickImage,
+                      child: const Text('Alterar foto'),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  Text(
+                    'INFORMAÇÕES PESSOAIS',
+                    style: AppTextStyles.sectionHeader(),
+                  ),
                   const SizedBox(height: 12),
-                  
+
                   // Campo Email (Apenas Leitura)
                   TextFormField(
                     initialValue: profile.email,
-                    decoration: AppInputDecoration.defaultDecoration(
-                      labelText: 'E-mail (Não pode ser alterado)',
-                      prefixIcon: const Icon(Icons.email, size: 20),
-                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                    decoration:
+                        AppInputDecoration.defaultDecoration(
+                          labelText: 'E-mail (Não pode ser alterado)',
+                          prefixIcon: const Icon(Icons.email, size: 20),
+                        ).copyWith(
+                          floatingLabelBehavior: FloatingLabelBehavior.never,
+                        ),
                     readOnly: true,
                     enabled: false,
                     style: const TextStyle(color: AppColors.textSecondary),
@@ -318,10 +432,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Nome
                   TextFormField(
                     controller: _nameController,
-                    decoration: AppInputDecoration.defaultDecoration(
-                      labelText: 'Nome Completo *',
-                      prefixIcon: const Icon(Icons.person, size: 20),
-                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                    decoration:
+                        AppInputDecoration.defaultDecoration(
+                          labelText: 'Nome Completo *',
+                          prefixIcon: const Icon(Icons.person, size: 20),
+                        ).copyWith(
+                          floatingLabelBehavior: FloatingLabelBehavior.never,
+                        ),
                     validator: AppValidators.combine([
                       AppValidators.required('Nome Completo'),
                       AppValidators.maxLength(100, 'Nome Completo'),
@@ -332,15 +449,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Telefone
                   TextFormField(
                     controller: _phoneController,
-                    decoration: AppInputDecoration.defaultDecoration(
-                      labelText: 'Telefone (com DDD) *',
-                      prefixIcon: const Icon(Icons.phone, size: 20),
-                      helperText: 'Ex: (11) 99999-9999',
-                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                    decoration:
+                        AppInputDecoration.defaultDecoration(
+                          labelText: 'Telefone (com DDD) *',
+                          prefixIcon: const Icon(Icons.phone, size: 20),
+                          helperText: 'Ex: (11) 99999-9999',
+                        ).copyWith(
+                          floatingLabelBehavior: FloatingLabelBehavior.never,
+                        ),
                     keyboardType: TextInputType.phone,
-                    inputFormatters: [
-                      PhoneInputFormatter(),
-                    ],
+                    inputFormatters: [PhoneInputFormatter()],
                     validator: AppValidators.combine([
                       AppValidators.required('Telefone'),
                       AppValidators.phone(),
@@ -349,7 +467,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 32),
 
                   // Campos de Endereço Estruturado
-                  Text('ENDEREÇO RESIDENCIAL', style: AppTextStyles.sectionHeader()),
+                  Text(
+                    'ENDEREÇO RESIDENCIAL',
+                    style: AppTextStyles.sectionHeader(),
+                  ),
                   const SizedBox(height: 12),
 
                   // Linha CEP e Estado (UF)
@@ -360,25 +481,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         flex: 3,
                         child: TextFormField(
                           controller: _cepController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: 'CEP *',
-                            prefixIcon: const Icon(Icons.map, size: 20),
-                            helperText: 'Ex: 01001-000',
-                            suffixIcon: _isLoadingCep
-                                ? const Padding(
-                                    padding: EdgeInsets.all(12.0),
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                                    ),
-                                  )
-                                : null,
-                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                          decoration:
+                              AppInputDecoration.defaultDecoration(
+                                labelText: 'CEP *',
+                                prefixIcon: const Icon(Icons.map, size: 20),
+                                helperText: 'Ex: 01001-000',
+                                suffixIcon: _isLoadingCep
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12.0),
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      )
+                                    : null,
+                              ).copyWith(
+                                floatingLabelBehavior:
+                                    FloatingLabelBehavior.never,
+                              ),
                           keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            CepInputFormatter(),
-                          ],
+                          inputFormatters: [CepInputFormatter()],
                           validator: AppValidators.combine([
                             AppValidators.required('CEP'),
                             AppValidators.cep(),
@@ -390,10 +516,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         flex: 2,
                         child: TextFormField(
                           controller: _stateController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: 'Estado (UF) *',
-                            helperText: 'Ex: SP',
-                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                          decoration:
+                              AppInputDecoration.defaultDecoration(
+                                labelText: 'Estado (UF) *',
+                                helperText: 'Ex: SP',
+                              ).copyWith(
+                                floatingLabelBehavior:
+                                    FloatingLabelBehavior.never,
+                              ),
                           textCapitalization: TextCapitalization.characters,
                           validator: AppValidators.combine([
                             AppValidators.required('Estado (UF)'),
@@ -409,10 +539,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Cidade
                   TextFormField(
                     controller: _cityController,
-                    decoration: AppInputDecoration.defaultDecoration(
-                      labelText: 'Cidade *',
-                      prefixIcon: const Icon(Icons.location_city, size: 20),
-                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                    decoration:
+                        AppInputDecoration.defaultDecoration(
+                          labelText: 'Cidade *',
+                          prefixIcon: const Icon(Icons.location_city, size: 20),
+                        ).copyWith(
+                          floatingLabelBehavior: FloatingLabelBehavior.never,
+                        ),
                     validator: AppValidators.combine([
                       AppValidators.required('Cidade'),
                       AppValidators.maxLength(100, 'Cidade'),
@@ -423,10 +556,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Bairro
                   TextFormField(
                     controller: _districtController,
-                    decoration: AppInputDecoration.defaultDecoration(
-                      labelText: 'Bairro *',
-                      prefixIcon: const Icon(Icons.layers, size: 20),
-                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                    decoration:
+                        AppInputDecoration.defaultDecoration(
+                          labelText: 'Bairro *',
+                          prefixIcon: const Icon(Icons.layers, size: 20),
+                        ).copyWith(
+                          floatingLabelBehavior: FloatingLabelBehavior.never,
+                        ),
                     validator: AppValidators.combine([
                       AppValidators.required('Bairro'),
                       AppValidators.maxLength(100, 'Bairro'),
@@ -442,10 +578,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         flex: 3,
                         child: TextFormField(
                           controller: _streetController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: 'Rua / Logradouro *',
-                            prefixIcon: const Icon(Icons.home, size: 20),
-                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                          decoration:
+                              AppInputDecoration.defaultDecoration(
+                                labelText: 'Rua / Logradouro *',
+                                prefixIcon: const Icon(Icons.home, size: 20),
+                              ).copyWith(
+                                floatingLabelBehavior:
+                                    FloatingLabelBehavior.never,
+                              ),
                           validator: AppValidators.combine([
                             AppValidators.required('Rua / Logradouro'),
                             AppValidators.maxLength(150, 'Rua / Logradouro'),
@@ -457,9 +597,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         flex: 1,
                         child: TextFormField(
                           controller: _numberController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: 'Nº *',
-                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                          decoration:
+                              AppInputDecoration.defaultDecoration(
+                                labelText: 'Nº *',
+                              ).copyWith(
+                                floatingLabelBehavior:
+                                    FloatingLabelBehavior.never,
+                              ),
                           validator: AppValidators.combine([
                             AppValidators.required('Número'),
                             AppValidators.maxLength(20, 'Número'),
@@ -473,11 +617,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Complemento
                   TextFormField(
                     controller: _complementController,
-                    decoration: AppInputDecoration.defaultDecoration(
-                      labelText: 'Complemento (Opcional)',
-                      prefixIcon: const Icon(Icons.info_outline, size: 20),
-                      helperText: 'Ex: Bloco B, Apt 104',
-                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
+                    decoration:
+                        AppInputDecoration.defaultDecoration(
+                          labelText: 'Complemento (Opcional)',
+                          prefixIcon: const Icon(Icons.info_outline, size: 20),
+                          helperText: 'Ex: Bloco B, Apt 104',
+                        ).copyWith(
+                          floatingLabelBehavior: FloatingLabelBehavior.never,
+                        ),
                     validator: AppValidators.combine([
                       AppValidators.maxLength(150, 'Complemento'),
                     ]),
@@ -492,22 +639,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       width: double.infinity,
                       child: ElevatedButton(
                         style: AppButtonStyles.primary(),
-                        onPressed: _isLoadingCep ? null : () => _saveChanges(profile),
+                        onPressed: _isLoadingCep
+                            ? null
+                            : () => _saveChanges(profile),
                         child: const Text('Salvar Alterações'),
                       ),
                     ),
-                  
+
                   const SizedBox(height: 48),
-                  
+
                   // Botão de Excluir Conta
                   Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                      border: Border.all(
+                        color: AppColors.error.withOpacity(0.3),
+                      ),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     padding: const EdgeInsets.all(16),
                     child: Column(
-                      children: [     
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: AppColors.error,
+                          size: 32,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Zona de Perigo',
+                          style: AppTextStyles.heading3(color: AppColors.error),
+                        ),
+                        const SizedBox(height: 4),
                         Text(
                           'A exclusão da conta é permanente e removerá todos os seus alertas ativos.',
                           style: AppTextStyles.bodySmall(),
@@ -533,7 +695,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) {
-          final errMsg = err is AppException ? err.message : 'Falha ao carregar perfil.';
+          final errMsg = err is AppException
+              ? err.message
+              : 'Falha ao carregar perfil.';
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,

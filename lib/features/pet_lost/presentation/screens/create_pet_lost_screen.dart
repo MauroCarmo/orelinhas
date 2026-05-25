@@ -1,11 +1,14 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/formatters/phone_input_formatter.dart';
+import '../../../../core/services/storage_service.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../controllers/pet_lost_controller.dart';
 import '../../domain/pet_lost_entity.dart';
@@ -29,7 +32,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
   late TextEditingController _descriptionController;
   late TextEditingController _lastLocationController;
   late TextEditingController _contactController;
-  late TextEditingController _imageUrlController;
 
   PetType _selectedType = PetType.dog;
   DateTime _selectedDate = DateTime.now();
@@ -37,8 +39,13 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
 
   // Coordenadas selecionadas no mapa
   LatLng? _selectedLocation;
-  // Controlador do mapa (para animações)
   final MapController _mapController = MapController();
+
+  // Imagem (compatível com mobile e web)
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageFileName; // Nome original do arquivo
+  String? _existingImageUrl; // URL carregada ao editar
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -49,7 +56,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     _descriptionController = TextEditingController();
     _lastLocationController = TextEditingController();
     _contactController = TextEditingController();
-    _imageUrlController = TextEditingController();
   }
 
   @override
@@ -60,7 +66,6 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     _descriptionController.dispose();
     _lastLocationController.dispose();
     _contactController.dispose();
-    _imageUrlController.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -74,15 +79,13 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       _descriptionController.text = alert.description;
       _lastLocationController.text = alert.lastLocation;
       _selectedDate = alert.lostDate;
-      _imageUrlController.text = alert.imageUrl ?? '';
+      _existingImageUrl = alert.imageUrl;
 
-      // Inicializa coordenadas se existirem
       if (alert.latitude != null && alert.longitude != null) {
         _selectedLocation = LatLng(alert.latitude!, alert.longitude!);
         _mapController.move(_selectedLocation!, 15.0);
       }
 
-      // Formata o telefone para exibição visual
       final rawPhone = alert.contact;
       if (rawPhone.length >= 10) {
         final ddd = rawPhone.substring(0, 2);
@@ -166,10 +169,8 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     );
   }
 
-  // Obtém a localização atual e move o marcador
   Future<void> _useCurrentLocation() async {
     try {
-      // Verifica permissão
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -205,6 +206,58 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     }
   }
 
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _selectedImageBytes = bytes;
+          _selectedImageFileName = image.name;
+          _existingImageUrl = null; // substitui URL existente
+        });
+      }
+    } catch (e) {
+      _showErrorDialog(context, ['Erro ao selecionar imagem.']);
+    }
+  }
+
+  Future<String?> _uploadImageIfNeeded() async {
+    // Se já havia uma URL e não foi selecionada nova imagem, mantém a URL (edição)
+    if (_selectedImageBytes == null &&
+        _existingImageUrl != null &&
+        _existingImageUrl!.isNotEmpty) {
+      return _existingImageUrl;
+    }
+
+    // Se não há imagem selecionada e nem URL existente, retorna null (imagem obrigatória será tratada depois)
+    if (_selectedImageBytes == null) {
+      return null;
+    }
+
+    final user = ref.read(currentUserProvider);
+    final storageService = ref.read(storageServiceProvider);
+
+    try {
+      final url = await storageService.uploadImage(
+        bytes: _selectedImageBytes!,
+        fileName: _selectedImageFileName ?? 'image.jpg',
+        bucket: 'pet_images',
+        folder: user?.id,
+      );
+      return url;
+    } on ValidationException catch (e) {
+      _showErrorDialog(context, [e.message]);
+      return null;
+    } catch (e) {
+      _showErrorDialog(context, ['Falha ao enviar imagem. Tente novamente.']);
+      return null;
+    }
+  }
+
   Future<void> _submitForm() async {
     final user = ref.read(currentUserProvider);
     if (user == null) {
@@ -214,6 +267,20 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
           backgroundColor: Colors.red,
         ),
       );
+      return;
+    }
+
+    // Validação prévia: imagem obrigatória
+    if (_selectedImageBytes == null &&
+        (_existingImageUrl == null || _existingImageUrl!.isEmpty)) {
+      _showErrorDialog(context, ['A foto do pet é obrigatória.']);
+      return;
+    }
+
+    // Upload da imagem (se necessário)
+    final imageUrl = await _uploadImageIfNeeded();
+    if (imageUrl == null) {
+      // Se havia imagem selecionada mas o upload falhou, já mostramos erro.
       return;
     }
 
@@ -228,7 +295,7 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       lastLocation: _lastLocationController.text,
       lostDate: _selectedDate,
       contact: _contactController.text,
-      imageUrl: _imageUrlController.text,
+      imageUrl: imageUrl,
       latitude: _selectedLocation?.latitude,
       longitude: _selectedLocation?.longitude,
     );
@@ -445,20 +512,21 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _imageUrlController,
-                      decoration: const InputDecoration(
-                        labelText: 'URL da Imagem do Pet *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.image),
-                        helperText: 'Link público da imagem (obrigatório).',
+
+                    // Seção de imagem (obrigatória)
+                    const Text(
+                      'Foto do Pet *',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueGrey,
                       ),
-                      keyboardType: TextInputType.url,
-                      enabled: !isLoading,
                     ),
+                    const SizedBox(height: 8),
+                    _buildImagePicker(isLoading),
                     const SizedBox(height: 16),
 
-                    // Seção de seleção de localização no mapa
+                    // Localização no mapa
                     const Text(
                       'Localização Exata no Mapa',
                       style: TextStyle(
@@ -476,7 +544,7 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                     const SizedBox(height: 8),
                     Text(
                       _selectedLocation == null
-                          ? 'Nenhuma localização selecionada. Arraste o marcador no mapa.'
+                          ? 'Nenhuma localização selecionada.'
                           : 'Selecionado: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
                       style: const TextStyle(
                         fontSize: 12,
@@ -512,15 +580,10 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                                   point: _selectedLocation!,
                                   width: 40,
                                   height: 40,
-                                  child: GestureDetector(
-                                    onPanUpdate: (details) {
-                                      // Não necessário, mas podemos permitir arrastar
-                                    },
-                                    child: const Icon(
-                                      Icons.location_on,
-                                      color: Colors.red,
-                                      size: 40,
-                                    ),
+                                  child: const Icon(
+                                    Icons.location_on,
+                                    color: Colors.red,
+                                    size: 40,
                                   ),
                                 ),
                               ],
@@ -562,6 +625,83 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildImagePicker(bool isLoading) {
+    final hasPreview =
+        _selectedImageBytes != null ||
+        (_existingImageUrl != null && _existingImageUrl!.isNotEmpty);
+
+    return Column(
+      children: [
+        if (hasPreview)
+          Container(
+            height: 200,
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(11),
+              child: _selectedImageBytes != null
+                  ? Image.memory(_selectedImageBytes!, fit: BoxFit.cover)
+                  : Image.network(
+                      _existingImageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.broken_image),
+                    ),
+            ),
+          )
+        else
+          Container(
+            height: 120,
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(
+              child: Icon(Icons.add_a_photo, size: 48, color: Colors.grey),
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            ElevatedButton.icon(
+              icon: const Icon(Icons.camera_alt),
+              label: const Text('Câmera'),
+              onPressed: isLoading
+                  ? null
+                  : () => _pickImage(ImageSource.camera),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.photo_library),
+              label: const Text('Galeria'),
+              onPressed: isLoading
+                  ? null
+                  : () => _pickImage(ImageSource.gallery),
+            ),
+          ],
+        ),
+        if (hasPreview)
+          TextButton(
+            onPressed: isLoading
+                ? null
+                : () {
+                    setState(() {
+                      _selectedImageBytes = null;
+                      _selectedImageFileName = null;
+                      _existingImageUrl = null;
+                    });
+                  },
+            child: const Text('Remover imagem'),
+          ),
+      ],
     );
   }
 }
