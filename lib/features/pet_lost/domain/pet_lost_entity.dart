@@ -65,8 +65,7 @@ class PetLostAlertEntity {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
+    final map = <String, dynamic>{
       'user_id': userId,
       'pet_name': petName,
       'pet_type': petType.name,
@@ -78,6 +77,10 @@ class PetLostAlertEntity {
       'contact': contact,
       'image_url': imageUrl,
     };
+    if (id.isNotEmpty) {
+      map['id'] = id;
+    }
+    return map;
   }
 
   PetLostAlertEntity copyWith({

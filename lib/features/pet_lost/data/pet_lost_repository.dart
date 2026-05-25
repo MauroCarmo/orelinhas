@@ -17,10 +17,32 @@ class PetLostRepository {
 
   PetLostRepository(this._supabase);
 
+  /// Recupera todos os alertas públicos (Feed).
+  Future<List<PetLostAlertEntity>> getPublicAlerts({int limit = 20, int offset = 0}) async {
+    _logger.i('Buscando feed público de alertas de pets perdidos.', context: {'limit': limit, 'offset': offset});
+
+    try {
+      final data = await _supabase
+          .from('pet_lost_alerts')
+          .select()
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
+
+      _logger.i('Feed público recuperado com sucesso.', context: {
+        'count': data.length,
+      });
+
+      return data.map((json) => PetLostAlertEntity.fromJson(json)).toList();
+    } catch (e, st) {
+      _logger.e('Erro técnico ao buscar feed público no Supabase.', error: e, stackTrace: st);
+      throw AppErrorMapper.map(e, st);
+    }
+  }
+
   /// Recupera todos os alertas de pets perdidos do usuário logado.
   /// A segurança é garantida pela RLS do Supabase, mas também aplicamos o
   /// Defensive Query Design realizando o filtro explícito no código.
-  Future<List<PetLostAlertEntity>> getAlerts(String userId, {int limit = 20, int offset = 0}) async {
+  Future<List<PetLostAlertEntity>> getUserAlerts(String userId, {int limit = 20, int offset = 0}) async {
     _logger.i('Buscando alertas de pets perdidos do usuário.', context: {'userId': userId, 'limit': limit, 'offset': offset});
 
     try {

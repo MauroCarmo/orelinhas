@@ -7,6 +7,8 @@ import '../../../../features/auth/presentation/controllers/auth_controller.dart'
 import '../../data/pet_lost_repository.dart';
 import '../../domain/pet_lost_entity.dart';
 
+import 'public_pet_lost_controller.dart';
+
 final petLostControllerProvider = AsyncNotifierProvider<PetLostController, List<PetLostAlertEntity>>(() {
   return PetLostController();
 });
@@ -27,7 +29,7 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
     _logger.i('Inicializando PetLostController e buscando lista de alertas.');
 
     try {
-      return await _repository.getAlerts(user.id);
+      return await _repository.getUserAlerts(user.id);
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
       _logger.e('Erro ao buscar lista inicial no PetLostController.', error: appException, stackTrace: st);
@@ -42,7 +44,7 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
 
     state = const AsyncLoading();
     try {
-      final list = await _repository.getAlerts(user.id);
+      final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
@@ -66,8 +68,10 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
     try {
       await _repository.createAlert(user.id, alert);
       // Recarrega a lista reativamente
-      final list = await _repository.getAlerts(user.id);
+      final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
+      // Invalida o feed público para que também seja atualizado
+      ref.invalidate(publicPetLostControllerProvider);
       _logger.i('Novo alerta registrado com sucesso no controller.', context: {'alertId': alert.id});
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
@@ -89,8 +93,10 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
     try {
       await _repository.updateAlert(user.id, alert);
       // Recarrega a lista reativamente
-      final list = await _repository.getAlerts(user.id);
+      final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
+      // Invalida o feed público para atualizar lá também
+      ref.invalidate(publicPetLostControllerProvider);
       _logger.i('Alerta atualizado com sucesso no controller.', context: {'alertId': alert.id});
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
@@ -112,8 +118,10 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
     try {
       await _repository.deleteAlert(user.id, id);
       // Recarrega a lista reativamente
-      final list = await _repository.getAlerts(user.id);
+      final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
+      // Invalida o feed público
+      ref.invalidate(publicPetLostControllerProvider);
       _logger.i('Alerta excluído com sucesso no controller.', context: {'alertId': id});
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);

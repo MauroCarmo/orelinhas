@@ -10,4 +10,6 @@ class AppRoutes {
   
   // Rota com parâmetro dinâmico
   static String petLostEdit(String id) => '/pet-lost/edit/$id';
+  // Rota para perfil público, com ID do usuário
+  static String publicProfile(String userId) => '/public-profile/$userId';
 }

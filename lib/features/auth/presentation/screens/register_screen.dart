@@ -5,6 +5,9 @@ import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/validation/validators.dart';
 import '../../../../core/validation/sanitizers.dart';
 import '../../../../core/formatters/phone_input_formatter.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
+import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../controllers/auth_controller.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -84,23 +87,27 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.mark_email_unread, size: 80, color: Colors.deepPurple),
+                const Icon(Icons.mark_email_unread, size: 80, color: AppColors.primary),
                 const SizedBox(height: 24),
-                const Text(
+                Text(
                   'Por favor, verifique seu e-mail!',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  style: AppTextStyles.heading1(),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Nós enviamos um link de confirmação. Clique nele para ativar sua conta antes de fazer o login.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16),
+                  style: AppTextStyles.body(color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 32),
-                ElevatedButton(
-                  onPressed: () => context.go('/login'),
-                  child: const Text('Voltar para o Login'),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: AppButtonStyles.primary(),
+                    onPressed: () => context.go('/login'),
+                    child: const Text('Voltar para o Login'),
+                  ),
                 )
               ],
             ),
@@ -112,20 +119,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Criar Conta')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.fromLTRB(25, 30, 25, 90),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Text('Novo Cadastro', style: AppTextStyles.heading2()),
+              const SizedBox(height: 8),
+              Text(
+                'Preencha seus dados para fazer parte do ecossistema Orelinhas.',
+                style: AppTextStyles.body(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 25),
+
               // Nome Completo
+              Text(
+                'Nome Completo *',
+                style: AppTextStyles.label(),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nome Completo *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
-                ),
+                decoration: AppInputDecoration.defaultDecoration(
+                  labelText: '',
+                  prefixIcon: const Icon(Icons.person, size: 20),
+                ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                 validator: AppValidators.combine([
                   AppValidators.required('Nome Completo'),
                   AppValidators.maxLength(100, 'Nome Completo'),
@@ -134,13 +153,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 16),
 
               // E-mail
+              Text(
+                'E-mail *',
+                style: AppTextStyles.label(),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'E-mail *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email),
-                ),
+                decoration: AppInputDecoration.defaultDecoration(
+                  labelText: '',
+                  prefixIcon: const Icon(Icons.email, size: 20),
+                ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                 keyboardType: TextInputType.emailAddress,
                 validator: AppValidators.combine([
                   AppValidators.required('E-mail'),
@@ -151,14 +174,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 16),
 
               // Telefone
+              Text(
+                'Telefone *',
+                style: AppTextStyles.label(),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _phoneController,
-                decoration: const InputDecoration(
-                  labelText: 'Telefone *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.phone),
+                decoration: AppInputDecoration.defaultDecoration(
+                  labelText: '',
                   helperText: 'Ex: (11) 99999-9999',
-                ),
+                  prefixIcon: const Icon(Icons.phone, size: 20),
+                ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                 keyboardType: TextInputType.phone,
                 inputFormatters: [
                   PhoneInputFormatter(),
@@ -171,14 +198,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 16),
 
               // Localização
+              Text(
+                'Cidade / Estado *',
+                style: AppTextStyles.label(),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _locationController,
-                decoration: const InputDecoration(
-                  labelText: 'Cidade / Estado *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.location_on),
+                decoration: AppInputDecoration.defaultDecoration(
+                  labelText: '',
                   helperText: 'Ex: São Paulo - SP',
-                ),
+                  prefixIcon: const Icon(Icons.location_on, size: 20),
+                ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                 validator: AppValidators.combine([
                   AppValidators.required('Cidade / Estado'),
                   AppValidators.maxLength(150, 'Cidade / Estado'),
@@ -187,27 +218,31 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 16),
 
               // Senha
+              Text(
+                'Senha (mín. 8 caracteres) *',
+                style: AppTextStyles.label(),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Senha (mín. 8 caracteres) *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
+                decoration: AppInputDecoration.defaultDecoration(
+                  labelText: '',
                   helperText: 'Maiúscula, minúscula, número e caractere especial (@\$!%*?&.)',
-                ),
+                  prefixIcon: const Icon(Icons.lock, size: 20),
+                ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                 obscureText: true,
                 validator: AppValidators.combine([
                   AppValidators.required('Senha'),
                   AppValidators.passwordComplexity(),
                 ]),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
 
               ElevatedButton(
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                style: AppButtonStyles.primary(),
                 onPressed: isLoading ? null : _register,
                 child: isLoading 
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
                     : const Text('Registrar'),
               ),
             ],

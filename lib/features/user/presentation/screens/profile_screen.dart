@@ -7,6 +7,9 @@ import '../../../../core/formatters/phone_input_formatter.dart';
 import '../../../../core/formatters/cep_input_formatter.dart';
 import '../../../../core/domain/address/address_entity.dart';
 import '../../../../core/services/viacep_service.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
+import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../../domain/profile_entity.dart';
@@ -273,36 +276,52 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           _initializeControllers(profile);
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 90),
             child: Form(
               key: _formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.account_circle, size: 100, color: Colors.blueGrey),
-                  const SizedBox(height: 16),
+                  Center(
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [AppColors.primary, AppColors.accent],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: const Icon(Icons.person, size: 50, color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  
+                  Text('INFORMAÇÕES PESSOAIS', style: AppTextStyles.sectionHeader()),
+                  const SizedBox(height: 12),
                   
                   // Campo Email (Apenas Leitura)
                   TextFormField(
                     initialValue: profile.email,
-                    decoration: const InputDecoration(
+                    decoration: AppInputDecoration.defaultDecoration(
                       labelText: 'E-mail (Não pode ser alterado)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.email),
-                    ),
+                      prefixIcon: const Icon(Icons.email, size: 20),
+                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                     readOnly: true,
                     enabled: false,
+                    style: const TextStyle(color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 16),
 
                   // Campo Nome
                   TextFormField(
                     controller: _nameController,
-                    decoration: const InputDecoration(
+                    decoration: AppInputDecoration.defaultDecoration(
                       labelText: 'Nome Completo *',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person),
-                    ),
+                      prefixIcon: const Icon(Icons.person, size: 20),
+                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                     validator: AppValidators.combine([
                       AppValidators.required('Nome Completo'),
                       AppValidators.maxLength(100, 'Nome Completo'),
@@ -313,12 +332,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Telefone
                   TextFormField(
                     controller: _phoneController,
-                    decoration: const InputDecoration(
+                    decoration: AppInputDecoration.defaultDecoration(
                       labelText: 'Telefone (com DDD) *',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.phone),
+                      prefixIcon: const Icon(Icons.phone, size: 20),
                       helperText: 'Ex: (11) 99999-9999',
-                    ),
+                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                     keyboardType: TextInputType.phone,
                     inputFormatters: [
                       PhoneInputFormatter(),
@@ -328,17 +346,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       AppValidators.phone(),
                     ]),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 32),
 
                   // Campos de Endereço Estruturado
-                  const Divider(),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
-                    child: Text(
-                      'Endereço Residencial',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                    ),
-                  ),
+                  Text('ENDEREÇO RESIDENCIAL', style: AppTextStyles.sectionHeader()),
+                  const SizedBox(height: 12),
 
                   // Linha CEP e Estado (UF)
                   Row(
@@ -348,10 +360,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         flex: 3,
                         child: TextFormField(
                           controller: _cepController,
-                          decoration: InputDecoration(
+                          decoration: AppInputDecoration.defaultDecoration(
                             labelText: 'CEP *',
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.map),
+                            prefixIcon: const Icon(Icons.map, size: 20),
                             helperText: 'Ex: 01001-000',
                             suffixIcon: _isLoadingCep
                                 ? const Padding(
@@ -359,11 +370,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     child: SizedBox(
                                       width: 16,
                                       height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
                                     ),
                                   )
                                 : null,
-                          ),
+                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                           keyboardType: TextInputType.number,
                           inputFormatters: [
                             CepInputFormatter(),
@@ -374,16 +385,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ]),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
                       Expanded(
                         flex: 2,
                         child: TextFormField(
                           controller: _stateController,
-                          decoration: const InputDecoration(
+                          decoration: AppInputDecoration.defaultDecoration(
                             labelText: 'Estado (UF) *',
-                            border: OutlineInputBorder(),
                             helperText: 'Ex: SP',
-                          ),
+                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                           textCapitalization: TextCapitalization.characters,
                           validator: AppValidators.combine([
                             AppValidators.required('Estado (UF)'),
@@ -399,11 +409,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Cidade
                   TextFormField(
                     controller: _cityController,
-                    decoration: const InputDecoration(
+                    decoration: AppInputDecoration.defaultDecoration(
                       labelText: 'Cidade *',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.location_city),
-                    ),
+                      prefixIcon: const Icon(Icons.location_city, size: 20),
+                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                     validator: AppValidators.combine([
                       AppValidators.required('Cidade'),
                       AppValidators.maxLength(100, 'Cidade'),
@@ -414,11 +423,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Bairro
                   TextFormField(
                     controller: _districtController,
-                    decoration: const InputDecoration(
+                    decoration: AppInputDecoration.defaultDecoration(
                       labelText: 'Bairro *',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.layers),
-                    ),
+                      prefixIcon: const Icon(Icons.layers, size: 20),
+                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                     validator: AppValidators.combine([
                       AppValidators.required('Bairro'),
                       AppValidators.maxLength(100, 'Bairro'),
@@ -434,26 +442,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         flex: 3,
                         child: TextFormField(
                           controller: _streetController,
-                          decoration: const InputDecoration(
+                          decoration: AppInputDecoration.defaultDecoration(
                             labelText: 'Rua / Logradouro *',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.home),
-                          ),
+                            prefixIcon: const Icon(Icons.home, size: 20),
+                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                           validator: AppValidators.combine([
                             AppValidators.required('Rua / Logradouro'),
                             AppValidators.maxLength(150, 'Rua / Logradouro'),
                           ]),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
                       Expanded(
                         flex: 1,
                         child: TextFormField(
                           controller: _numberController,
-                          decoration: const InputDecoration(
+                          decoration: AppInputDecoration.defaultDecoration(
                             labelText: 'Nº *',
-                            border: OutlineInputBorder(),
-                          ),
+                          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                           validator: AppValidators.combine([
                             AppValidators.required('Número'),
                             AppValidators.maxLength(20, 'Número'),
@@ -467,12 +473,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   // Campo Complemento
                   TextFormField(
                     controller: _complementController,
-                    decoration: const InputDecoration(
+                    decoration: AppInputDecoration.defaultDecoration(
                       labelText: 'Complemento (Opcional)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.info_outline),
+                      prefixIcon: const Icon(Icons.info_outline, size: 20),
                       helperText: 'Ex: Bloco B, Apt 104',
-                    ),
+                    ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
                     validator: AppValidators.combine([
                       AppValidators.maxLength(150, 'Complemento'),
                     ]),
@@ -483,34 +488,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   if (profileState.isLoading)
                     const Center(child: CircularProgressIndicator())
                   else
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: Colors.blue,
-                      ),
-                      onPressed: _isLoadingCep ? null : () => _saveChanges(profile),
-                      child: const Text(
-                        'Salvar Alterações',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: AppButtonStyles.primary(),
+                        onPressed: _isLoadingCep ? null : () => _saveChanges(profile),
+                        child: const Text('Salvar Alterações'),
                       ),
                     ),
                   
                   const SizedBox(height: 48),
                   
                   // Botão de Excluir Conta
-                  const Divider(color: Colors.redAccent),
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    icon: const Icon(Icons.delete_forever),
-                    label: const Text(
-                      'Excluir Conta Permanentemente',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 32),
+                        const SizedBox(height: 8),
+                        const SizedBox(height: 4),
+                        Text(
+                          'A exclusão da conta é permanente e removerá todos os seus alertas ativos.',
+                          style: AppTextStyles.bodySmall(),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: AppButtonStyles.danger(),
+                            icon: const Icon(Icons.delete_forever, size: 18),
+                            label: const Text('Excluir Conta Permanentemente'),
+                            onPressed: _confirmDeleteAccount,
+                          ),
+                        ),
+                      ],
                     ),
-                    onPressed: _confirmDeleteAccount,
                   ),
                 ],
               ),
