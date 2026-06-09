@@ -12,6 +12,11 @@ import '../../features/pet_lost/presentation/screens/pet_lost_list_screen.dart';
 import '../../features/pet_lost/presentation/screens/create_pet_lost_screen.dart';
 import '../../features/user/presentation/screens/public_profile_screen.dart';
 import '../../features/pet_lost/presentation/screens/pet_lost_map_screen.dart';
+import '../../features/pet_found/presentation/screens/pet_found_list_screen.dart';
+import '../../features/pet_found/presentation/screens/create_pet_found_screen.dart';
+import '../../features/pet_found/presentation/screens/pet_found_map_screen.dart';
+import '../../features/pet_adoption/presentation/screens/pet_adoption_list_screen.dart';
+import '../../features/pet_adoption/presentation/screens/create_pet_adoption_screen.dart';
 import 'app_routes.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -91,6 +96,21 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: AppRoutes.petFound,
+        builder: (context, state) => const PetFoundListScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.petFoundCreate,
+        builder: (context, state) => const CreatePetFoundScreen(),
+      ),
+      GoRoute(
+        path: '/pet-found/edit/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return CreatePetFoundScreen(alertId: id);
+        },
+      ),
+      GoRoute(
         path: '/public-profile/:userId',
         builder: (context, state) {
           final userId = state.pathParameters['userId']!;
@@ -100,6 +120,25 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.petLostMap,
         builder: (context, state) => const PetLostMapScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.petFoundMap,
+        builder: (context, state) => const PetFoundMapScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.petAdoption,
+        builder: (context, state) => const PetAdoptionListScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.petAdoptionCreate,
+        builder: (context, state) => const CreatePetAdoptionScreen(),
+      ),
+      GoRoute(
+        path: '/pet-adoption/edit/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return CreatePetAdoptionScreen(alertId: id);
+        },
       ),
     ],
   );
