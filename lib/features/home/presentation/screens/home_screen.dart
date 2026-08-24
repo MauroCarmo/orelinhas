@@ -57,20 +57,35 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 25),
 
-            // Hub Grid
             GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: (MediaQuery.of(context).size.width / 2 - 26) / 115,
+              childAspectRatio: (() {
+                final width = MediaQuery.of(context).size.width;
+                final computed = (width / 2 - 26) / 115;
+                return computed > 0 ? computed : 1.2;
+              })(),
               children: [
                 _buildHubItem(
                   icon: Icons.pets,
                   title: 'Pets Perdidos',
                   desc: 'Mural de alertas e buscas',
                   onTap: () => context.push(AppRoutes.petLost),
+                ),
+                _buildHubItem(
+                  icon: Icons.check_circle_outline,
+                  title: 'Pets Encontrados',
+                  desc: 'Mural de achados',
+                  onTap: () => context.push(AppRoutes.petFound),
+                ),
+                _buildHubItem(
+                  icon: Icons.favorite,
+                  title: 'Adoção de Pets',
+                  desc: 'Divulgue ou encontre pets',
+                  onTap: () => context.push(AppRoutes.petAdoption),
                 ),
                 _buildHubItem(
                   icon: Icons.person,
