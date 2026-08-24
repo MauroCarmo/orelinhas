@@ -69,7 +69,7 @@ class PetLostRepository {
   /// Insere um novo alerta de pet perdido.
   /// Realiza a sanitização exclusiva dos campos técnicos antes de persistir.
   /// O user_id é imperativamente injetado a partir da sessão autenticada.
-  Future<void> createAlert(String userId, PetLostAlertEntity alert) async {
+  Future<PetLostAlertEntity> createAlert(String userId, PetLostAlertEntity alert) async {
     _logger.i('Iniciando criação de alerta de pet perdido no repositório.', context: {'userId': userId});
 
     // Sanitização de dados ANTES da persistência (Exclusividade do Repositório)
@@ -86,8 +86,14 @@ class PetLostRepository {
     );
 
     try {
-      await _supabase.from('pet_lost_alerts').insert(sanitizedAlert.toJson());
-      _logger.i('Alerta de pet perdido inserido com sucesso.', context: {'userId': userId});
+      final data = await _supabase
+          .from('pet_lost_alerts')
+          .insert(sanitizedAlert.toJson())
+          .select()
+          .single();
+      final created = PetLostAlertEntity.fromJson(data);
+      _logger.i('Alerta de pet perdido inserido com sucesso.', context: {'userId': userId, 'id': created.id});
+      return created;
     } catch (e, st) {
       _logger.e('Erro técnico ao inserir alerta no Supabase.', error: e, stackTrace: st, context: {'userId': userId});
       throw AppErrorMapper.map(e, st);

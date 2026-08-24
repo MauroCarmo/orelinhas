@@ -6,6 +6,9 @@ import '../../../../core/logger/app_logger.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../../data/pet_found_repository.dart';
 import '../../domain/pet_found_entity.dart';
+import '../../../pet_lost/data/pet_lost_repository.dart';
+import '../../../pet_recognition/data/repositories/pet_recognition_repository.dart';
+
 import 'public_pet_found_controller.dart';
 
 final petFoundControllerProvider = AsyncNotifierProvider<PetFoundController, List<PetFoundAlertEntity>>(() {
@@ -63,13 +66,38 @@ class PetFoundController extends AsyncNotifier<List<PetFoundAlertEntity>> {
     }
     state = const AsyncLoading();
     try {
-      await _repository.createAlert(user.id, alert);
+      final createdAlert = await _repository.createAlert(user.id, alert);
       // Recarrega a lista reativamente
       final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
       // Invalida o feed público para que também seja atualizado
       ref.invalidate(publicPetFoundControllerProvider);
-      _logger.i('Novo alerta registrado com sucesso no controller.', context: {'alertId': alert.id});
+      _logger.i('Novo alerta registrado com sucesso no controller.', context: {'alertId': createdAlert.id});
+
+      // Dispara processamento visual e busca de matches com IA em segundo plano
+      if (createdAlert.imageUrl.isNotEmpty) {
+        final recognitionRepo = ref.read(petRecognitionRepositoryProvider);
+        final petLostRepo = ref.read(petLostRepositoryProvider);
+
+        recognitionRepo.processPetImages(
+          petId: createdAlert.id,
+          petType: createdAlert.petType,
+          imageUrls: [createdAlert.imageUrl],
+        ).then((foundVisualProfile) async {
+          // Busca todos os pets perdidos ativos para verificar se este pet encontrado corresponde a algum
+          final activeLostPets = await petLostRepo.getPublicAlerts(limit: 50);
+          for (final lostPet in activeLostPets) {
+            if (lostPet.petType != createdAlert.petType) continue;
+            final lostVisualProfile = await recognitionRepo.getVisualProfile(lostPet.id);
+            await recognitionRepo.findMatches(
+              queryPet: lostPet,
+              queryVisualProfile: lostVisualProfile,
+            );
+          }
+        }).catchError((e) {
+          _logger.w('Processamento de IA em background falhou suavemente.', error: e);
+        });
+      }
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
       _logger.e('Erro ao criar alerta no PetFoundController.', error: appException, stackTrace: st, context: {'alertId': alert.id});

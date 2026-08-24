@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../notification/presentation/widgets/notification_badge_button.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -23,6 +24,7 @@ class HomeScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          const NotificationBadgeButton(),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () {

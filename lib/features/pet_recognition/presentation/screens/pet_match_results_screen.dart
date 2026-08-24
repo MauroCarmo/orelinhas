@@ -112,7 +112,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: matchState.matches.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 16),
+                      separatorBuilder: (context, index) => const SizedBox(height: 16),
                       itemBuilder: (context, index) {
                         final candidate = matchState.matches[index];
                         return _buildMatchCandidateCard(candidate);
@@ -142,7 +142,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                     width: 60,
                     height: 60,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (context, error, stackTrace) => Container(
                       width: 60,
                       height: 60,
                       color: Colors.grey.shade300,
@@ -215,13 +215,14 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
             divisions: 12,
             activeColor: AppColors.primary,
             label: '${(state.minSimilarityThreshold * 100).toStringAsFixed(0)}%',
-            onChanged: (val) {
+            onChangeEnd: (val) {
               if (_targetPet != null) {
                 ref
                     .read(petMatchControllerProvider.notifier)
                     .updateThreshold(_targetPet!, val);
               }
             },
+            onChanged: (_) {},
           ),
         ],
       ),
@@ -291,7 +292,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
         border: Border.all(color: Colors.grey.shade300),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
@@ -311,7 +312,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                         height: 190,
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (context, error, stackTrace) => Container(
                           height: 190,
                           color: Colors.grey.shade200,
                           child: const Icon(Icons.broken_image, size: 40),

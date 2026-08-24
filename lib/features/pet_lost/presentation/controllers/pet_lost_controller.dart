@@ -6,6 +6,7 @@ import '../../../../core/logger/app_logger.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../../data/pet_lost_repository.dart';
 import '../../domain/pet_lost_entity.dart';
+import '../../../pet_recognition/data/repositories/pet_recognition_repository.dart';
 
 import 'public_pet_lost_controller.dart';
 
@@ -66,13 +67,30 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
     }
     state = const AsyncLoading();
     try {
-      await _repository.createAlert(user.id, alert);
+      final createdAlert = await _repository.createAlert(user.id, alert);
       // Recarrega a lista reativamente
       final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
       // Invalida o feed público para que também seja atualizado
       ref.invalidate(publicPetLostControllerProvider);
-      _logger.i('Novo alerta registrado com sucesso no controller.', context: {'alertId': alert.id});
+      _logger.i('Novo alerta registrado com sucesso no controller.', context: {'alertId': createdAlert.id});
+
+      // Dispara processamento visual e busca de matches com IA em segundo plano
+      if (createdAlert.imageUrl != null && createdAlert.imageUrl!.isNotEmpty) {
+        final recognitionRepo = ref.read(petRecognitionRepositoryProvider);
+        recognitionRepo.processPetImages(
+          petId: createdAlert.id,
+          petType: createdAlert.petType,
+          imageUrls: [createdAlert.imageUrl!],
+        ).then((visualProfile) {
+          recognitionRepo.findMatches(
+            queryPet: createdAlert,
+            queryVisualProfile: visualProfile,
+          );
+        }).catchError((e) {
+          _logger.w('Processamento de IA em background falhou suavemente.', error: e);
+        });
+      }
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
       _logger.e('Erro ao criar alerta no PetLostController.', error: appException, stackTrace: st, context: {'alertId': alert.id});

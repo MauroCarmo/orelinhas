@@ -27,7 +27,7 @@ class PetRecognitionRepository {
 
   PetRecognitionRepository(this._aiVisionService, this._supabaseService);
 
-  /// Processa visualmente uma lista de imagens de um pet (3 a 5 fotos).
+  /// Processa visualmente uma lista de imagens de um pet (máximo 3 fotos por anúncio).
   /// Cada foto é analisada individualmente com isolamento total de falhas.
   Future<PetVisualProfileEntity> processPetImages({
     required String petId,
@@ -35,9 +35,12 @@ class PetRecognitionRepository {
     required List<String> imageUrls,
     Map<String, BoundingBoxEntity>? selectedAnimalPerImage,
   }) async {
-    _logger.i('Iniciando processamento de lote de imagens do pet.', context: {
+    // Garante no máximo 3 imagens por anúncio
+    final targetUrls = imageUrls.take(3).toList();
+
+    _logger.i('Iniciando processamento de imagens do pet (máx 3).', context: {
       'petId': petId,
-      'totalImages': imageUrls.length,
+      'totalImages': targetUrls.length,
       'petType': petType.name,
     });
 
@@ -45,11 +48,11 @@ class PetRecognitionRepository {
 
     // Se for espécie diferente de cão e gato, não executa pipeline visual
     if (petType != PetType.dog && petType != PetType.cat) {
-      for (int i = 0; i < imageUrls.length; i++) {
+      for (int i = 0; i < targetUrls.length; i++) {
         analyzedImages.add(
           PetImageAnalysisEntity(
             id: 'img_${petId}_$i',
-            imageUrl: imageUrls[i],
+            imageUrl: targetUrls[i],
             status: AnalysisStatus.notDetected,
             errorReason: 'Espécie não utiliza reconhecimento visual de embeddings.',
             processedAt: DateTime.now(),
@@ -69,9 +72,9 @@ class PetRecognitionRepository {
       return profile;
     }
 
-    // Processa cada imagem individualmente (YOLOv8n + SigLIP)
-    for (int i = 0; i < imageUrls.length; i++) {
-      final imgUrl = imageUrls[i];
+    // Processa cada imagem individualmente (YOLOv8n + SigLIP) - até 3 fotos
+    for (int i = 0; i < targetUrls.length; i++) {
+      final imgUrl = targetUrls[i];
       final imageId = 'img_${petId}_$i';
       final selectedBox = selectedAnimalPerImage?[imgUrl];
 
@@ -82,6 +85,15 @@ class PetRecognitionRepository {
           petType: petType,
           userSelectedBox: selectedBox,
         );
+
+        if (result.embedding768 != null) {
+          await _supabaseService.savePetImage(
+            petId: petId,
+            imageUrl: imgUrl,
+            status: result.status.name,
+            embedding: result.embedding768,
+          );
+        }
 
         analyzedImages.add(
           PetImageAnalysisEntity(
@@ -134,21 +146,20 @@ class PetRecognitionRepository {
     return await _supabaseService.getVisualProfile(petId);
   }
 
-  /// Executa a busca em duas etapas por possíveis correspondências (Matches):
-  /// Etapa 1: Recuperação de candidatos estruturados e vetoriais (pgvector/HNSW conceitual).
-  /// Etapa 2: Refinamento detalhado por similaridade de cosseno nos embeddings individuais.
+  /// Executa a busca por possíveis correspondências (Matches):
+  /// Comparação estritamente visual baseada nos embeddings das imagens (SigLIP 768d + Cosseno).
   Future<List<PetMatchCandidateEntity>> findMatches({
     required PetLostAlertEntity queryPet,
     PetVisualProfileEntity? queryVisualProfile,
-    double minSimilarity = 0.50,
+    double minSimilarity = 0.70,
   }) async {
-    _logger.i('Iniciando busca de matches.', context: {
+    _logger.i('Iniciando busca visual de matches por embeddings de imagem.', context: {
       'queryPetId': queryPet.id,
       'petType': queryPet.petType.name,
       'hasVisual': queryVisualProfile?.hasVisualEmbedding,
     });
 
-    // 1. Etapa 1 - Recuperação de candidatos (Defensive Species Isolation)
+    // 1. Recuperação de candidatos ativos da mesma espécie
     final filter = PetCadastralFilterEntity.fromPetAlert(queryPet);
     final candidateAlerts = await _supabaseService.getCandidateAlerts(
       filters: filter,
@@ -161,7 +172,7 @@ class PetRecognitionRepository {
 
     final List<PetMatchCandidateEntity> matches = [];
 
-    // Se for cão/gato e houver embeddings visuais válidos:
+    // Se houver perfil visual válido para a query:
     final bool canPerformVisualMatch = queryVisualProfile != null &&
         queryVisualProfile.hasVisualEmbedding &&
         queryVisualProfile.isEligibleForVisualAi;
@@ -172,75 +183,62 @@ class PetRecognitionRepository {
           .toList();
 
       for (final candidate in candidateAlerts) {
-        // Regra estrita: nunca comparar espécies diferentes
+        // Regra estrita: nunca comparar espécies diferentes (cão != gato)
         if (candidate.petType != queryPet.petType) continue;
 
         final candidateProfile =
             await _supabaseService.getVisualProfile(candidate.id);
 
-        double finalScore = 0.0;
+        // Se o candidato não possui fotos/embeddings válidos, desconsidera
+        if (candidateProfile == null || !candidateProfile.hasVisualEmbedding) {
+          continue;
+        }
+
+        final candidateValidEmbeddings = candidateProfile.validImageAnalyses
+            .map((img) => img.embedding!)
+            .toList();
+
+        final aggregatedSim = VectorMath.cosineSimilarity(
+          queryVisualProfile.aggregatedEmbedding,
+          candidateProfile.aggregatedEmbedding,
+        );
+
+        // Score 100% puramente visual (cosseno sobre os embeddings das fotos)
+        final finalScore = VectorMath.computeDetailedMatchScore(
+          queryEmbeddings: queryValidEmbeddings,
+          candidateEmbeddings: candidateValidEmbeddings,
+          aggregatedSimilarity: aggregatedSim,
+        );
+
         final List<double> individualScores = [];
-
-        if (candidateProfile != null && candidateProfile.hasVisualEmbedding) {
-          // Etapa 2 - Refinamento detalhado com embeddings individuais
-          final candidateValidEmbeddings = candidateProfile.validImageAnalyses
-              .map((img) => img.embedding!)
-              .toList();
-
-          final aggregatedSim = VectorMath.cosineSimilarity(
-            queryVisualProfile.aggregatedEmbedding,
-            candidateProfile.aggregatedEmbedding,
-          );
-
-          finalScore = VectorMath.computeDetailedMatchScore(
-            queryEmbeddings: queryValidEmbeddings,
-            candidateEmbeddings: candidateValidEmbeddings,
-            aggregatedSimilarity: aggregatedSim,
-          );
-
-          for (final q in queryValidEmbeddings) {
-            double best = 0.0;
-            for (final c in candidateValidEmbeddings) {
-              final sim = VectorMath.cosineSimilarity(q, c);
-              if (sim > best) best = sim;
-            }
-            individualScores.add(best);
+        for (final q in queryValidEmbeddings) {
+          double best = 0.0;
+          for (final c in candidateValidEmbeddings) {
+            final sim = VectorMath.cosineSimilarity(q, c);
+            if (sim > best) best = sim;
           }
-        } else {
-          // Candidato não possui perfil visual -> fallback cadastral com peso reduzido
-          finalScore = _computeCadastralScore(queryPet, candidate);
+          individualScores.add(best);
         }
 
         if (finalScore >= minSimilarity) {
+          // Persiste na tabela matches do Supabase (dispara o trigger de notificação)
+          await _supabaseService.saveMatch(
+            lostPetId: queryPet.id,
+            foundPetId: candidate.id,
+            similarityScore: finalScore,
+            matchMethod: 'visual',
+            individualScores: individualScores,
+          );
+
           matches.add(
             PetMatchCandidateEntity(
               matchedPet: candidate,
               visualProfile: candidateProfile,
               similarityScore: finalScore,
-              matchMethod: candidateProfile?.hasVisualEmbedding == true
-                  ? MatchMethod.visual
-                  : MatchMethod.cadastral,
+              matchMethod: MatchMethod.visual,
               individualImageScores: individualScores,
               matchingDetails:
-                  'Similaridade baseada em fotos e características compatíveis.',
-            ),
-          );
-        }
-      }
-    } else {
-      // Outras espécies (ou cão/gato sem embeddings): busca puramente cadastral
-      for (final candidate in candidateAlerts) {
-        if (candidate.petType != queryPet.petType) continue;
-
-        final score = _computeCadastralScore(queryPet, candidate);
-        if (score >= minSimilarity) {
-          matches.add(
-            PetMatchCandidateEntity(
-              matchedPet: candidate,
-              similarityScore: score,
-              matchMethod: MatchMethod.cadastral,
-              matchingDetails:
-                  'Correspondência baseada em raça, idade e localização aproximada.',
+                  'Correspondência visual calculada a partir dos embeddings das fotos.',
             ),
           );
         }
@@ -250,45 +248,5 @@ class PetRecognitionRepository {
     // Ordena matches do maior score para o menor
     matches.sort((a, b) => b.similarityScore.compareTo(a.similarityScore));
     return matches;
-  }
-
-  /// Calcula um score de similaridade cadastral ponderado (0.0 a 1.0)
-  double _computeCadastralScore(
-    PetLostAlertEntity a,
-    PetLostAlertEntity b,
-  ) {
-    if (a.petType != b.petType) return 0.0;
-
-    double score = 0.40; // Base por pertencer à mesma espécie
-
-    // Comparação de raça
-    if (a.breed != null &&
-        b.breed != null &&
-        a.breed!.trim().isNotEmpty &&
-        b.breed!.trim().isNotEmpty) {
-      if (a.breed!.trim().toLowerCase() == b.breed!.trim().toLowerCase()) {
-        score += 0.30;
-      }
-    }
-
-    // Comparação de idade
-    if (a.age != null &&
-        b.age != null &&
-        a.age!.trim().isNotEmpty &&
-        b.age!.trim().isNotEmpty) {
-      if (a.age!.trim().toLowerCase() == b.age!.trim().toLowerCase()) {
-        score += 0.15;
-      }
-    }
-
-    // Proximidade temporal do desaparecimento (dentro de 15 dias ganha bônus)
-    final daysDiff = a.lostDate.difference(b.lostDate).inDays.abs();
-    if (daysDiff <= 15) {
-      score += 0.15;
-    } else if (daysDiff <= 45) {
-      score += 0.05;
-    }
-
-    return score.clamp(0.0, 1.0);
   }
 }

@@ -8,8 +8,6 @@ enum MatchMethod {
 
   /// Baseado puramente em atributos cadastrais estruturados (outras espécies ou sem foto válida).
   cadastral;
-
-  String get name => toString().split('.').last;
 }
 
 /// Nível de confiança qualitativo para apresentação amigável ao usuário.

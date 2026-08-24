@@ -42,14 +42,14 @@ class PetMultiImageAnalyzerWidget extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Fotos do Pet (${imageUrls.length}/5)',
+              'Fotos do Pet (${imageUrls.length}/3)',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.blueGrey,
               ),
             ),
-            if (!isReadOnly && imageUrls.length < 5)
+            if (!isReadOnly && imageUrls.length < 3)
               TextButton.icon(
                 icon: const Icon(Icons.add_photo_alternate, size: 18),
                 label: const Text('Adicionar Foto'),
@@ -59,7 +59,7 @@ class PetMultiImageAnalyzerWidget extends ConsumerWidget {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Envie de 3 a 5 fotos de ângulos diferentes para facilitar o reconhecimento visual.',
+          'Envie até 3 fotos de ângulos diferentes para o reconhecimento visual por IA.',
           style: TextStyle(fontSize: 12, color: Colors.black54),
         ),
         const SizedBox(height: 12),
@@ -92,7 +92,7 @@ class PetMultiImageAnalyzerWidget extends ConsumerWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: imageUrls.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (context, index) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final url = imageUrls[index];
                 final analysis = _getAnalysisFor(url);
@@ -120,7 +120,7 @@ class PetMultiImageAnalyzerWidget extends ConsumerWidget {
         border: Border.all(color: Colors.grey.shade300),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -140,7 +140,7 @@ class PetMultiImageAnalyzerWidget extends ConsumerWidget {
                     width: double.infinity,
                     height: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (context, error, stackTrace) => Container(
                       color: Colors.grey.shade200,
                       child: const Icon(Icons.broken_image, color: Colors.grey),
                     ),

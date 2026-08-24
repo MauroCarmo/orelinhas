@@ -17,8 +17,6 @@ enum AnalysisStatus {
   /// A imagem é preservada e o cadastro do pet permanece válido.
   error;
 
-  String get name => toString().split('.').last;
-
   /// Retorna o enum a partir de string serializada.
   static AnalysisStatus fromString(String? value) {
     switch (value) {

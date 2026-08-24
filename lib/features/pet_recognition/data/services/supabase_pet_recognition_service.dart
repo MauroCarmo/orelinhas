@@ -112,33 +112,135 @@ class SupabasePetRecognitionService {
   }
 
   /// Busca alertas candidatos ativos aplicando filtros cadastrais obrigatórios.
+  /// Para um pet perdido, busca prioritariamente em pet_found_alerts (pets encontrados).
   Future<List<PetLostAlertEntity>> getCandidateAlerts({
     required PetCadastralFilterEntity filters,
     String? excludePetId,
     int limit = 50,
   }) async {
-    _logger.i('Buscando alertas candidatos cadastrais.', context: {
+    _logger.i('Buscando alertas candidatos cadastrais em pet_found_alerts.', context: {
       'species': filters.petType.name,
       'excludePetId': excludePetId,
     });
 
     try {
+      // 1. Busca em pet_found_alerts (pets encontrados na rua)
       var query = _supabase
-          .from('pet_lost_alerts')
+          .from('pet_found_alerts')
           .select()
           .eq('status', 'active')
-          .eq('pet_type', filters.petType.name); // Filtro estrito de espécie
+          .eq('pet_type', filters.petType.name);
 
       if (excludePetId != null && excludePetId.isNotEmpty) {
         query = query.neq('id', excludePetId);
       }
 
-      final data = await query.order('created_at', ascending: false).limit(limit);
+      final foundData = await query.order('created_at', ascending: false).limit(limit);
 
-      return data.map((json) => PetLostAlertEntity.fromJson(json)).toList();
+      final List<PetLostAlertEntity> results = [];
+
+      for (final json in foundData) {
+        final breedStr = json['breed'] as String?;
+        results.add(
+          PetLostAlertEntity(
+            id: json['id'] as String,
+            userId: json['user_id'] as String,
+            petName: breedStr != null && breedStr.isNotEmpty
+                ? 'Pet Encontrado ($breedStr)'
+                : 'Pet Encontrado',
+            petType: filters.petType,
+            breed: breedStr,
+            description: json['description'] as String? ?? '',
+            lastLocation: json['found_location'] as String? ?? '',
+            lostDate: json['created_at'] != null
+                ? DateTime.parse(json['created_at'] as String)
+                : DateTime.now(),
+            contact: json['contact'] as String? ?? '',
+            imageUrl: json['image_url'] as String?,
+            latitude: json['latitude'] != null
+                ? (json['latitude'] as num).toDouble()
+                : null,
+            longitude: json['longitude'] != null
+                ? (json['longitude'] as num).toDouble()
+                : null,
+          ),
+        );
+      }
+
+      // Se houver registros em pet_found_alerts, retorna eles
+      if (results.isNotEmpty) {
+        return results;
+      }
+
+      // 2. Fallback: busca em pet_lost_alerts caso não haja nenhum pet_found
+      var lostQuery = _supabase
+          .from('pet_lost_alerts')
+          .select()
+          .eq('status', 'active')
+          .eq('pet_type', filters.petType.name);
+
+      if (excludePetId != null && excludePetId.isNotEmpty) {
+        lostQuery = lostQuery.neq('id', excludePetId);
+      }
+
+      final lostData = await lostQuery.order('created_at', ascending: false).limit(limit);
+      return lostData.map((json) => PetLostAlertEntity.fromJson(json)).toList();
     } catch (e, st) {
       _logger.e('Erro ao buscar candidatos no banco.', error: e, stackTrace: st);
       return [];
+    }
+  }
+
+  /// Salva uma imagem individual e seu embedding na tabela pet_images.
+  Future<void> savePetImage({
+    required String petId,
+    required String imageUrl,
+    String status = 'processed',
+    List<double>? embedding,
+  }) async {
+    try {
+      await _supabase.from('pet_images').insert({
+        'pet_id': petId,
+        'image_url': imageUrl,
+        'status': status,
+        'embedding': embedding,
+      });
+      _logger.i('Imagem e embedding persistidos em pet_images.', context: {'petId': petId});
+    } catch (e, st) {
+      _logger.w('Aviso: Não foi possível persistir em pet_images no Supabase.', error: e, stackTrace: st);
+    }
+  }
+
+  /// Registra uma correspondência na tabela matches (ativa o trigger de notificação).
+  Future<void> saveMatch({
+    required String lostPetId,
+    required String foundPetId,
+    required double similarityScore,
+    String matchMethod = 'visual',
+    List<double> individualScores = const [],
+  }) async {
+    _logger.i('Persistindo correspondência na tabela matches.', context: {
+      'lostPetId': lostPetId,
+      'foundPetId': foundPetId,
+      'similarity': similarityScore,
+    });
+
+    try {
+      await _supabase.from('matches').upsert(
+        {
+          'lost_pet_id': lostPetId,
+          'found_pet_id': foundPetId,
+          'similarity_score': similarityScore,
+          'match_method': matchMethod,
+          'status': 'pending',
+          'individual_scores': individualScores,
+          'created_at': DateTime.now().toIso8601String(),
+        },
+        onConflict: 'lost_pet_id,found_pet_id',
+      );
+      _logger.i('Match gravado com sucesso no Supabase.');
+    } catch (e, st) {
+      _logger.w('Aviso ao persistir match no Supabase.', error: e, stackTrace: st);
     }
   }
 }

@@ -5,14 +5,16 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../../../core/logger/app_logger.dart';
+import '../../../../core/services/supabase_service.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart';
 import '../../domain/models/analysis_status.dart';
 import '../../domain/models/bounding_box_entity.dart';
-import '../../domain/models/pet_image_analysis_entity.dart';
 import '../../domain/utils/vector_math.dart';
 
 final aiVisionServiceProvider = Provider<AiVisionService>((ref) {
-  return AiVisionService();
+  final supabase = ref.watch(supabaseClientProvider);
+  final accessToken = supabase.auth.currentSession?.accessToken;
+  return AiVisionService(authToken: accessToken);
 });
 
 /// Resultado da execução do pipeline de IA para uma imagem.
@@ -39,14 +41,17 @@ class AiVisionService {
 
   // Configurações do serviço de IA (podem ser substituídas por endpoints reais de Edge Function / Cloud)
   final String? _apiEndpoint;
+  final String? _authToken;
   final Duration _timeout;
 
   AiVisionService({
     http.Client? httpClient,
     String? apiEndpoint,
+    String? authToken,
     Duration timeout = const Duration(seconds: 15),
   })  : _httpClient = httpClient ?? http.Client(),
         _apiEndpoint = apiEndpoint,
+        _authToken = authToken,
         _timeout = timeout;
 
   /// Analisa uma imagem de pet através do pipeline:
@@ -81,7 +86,8 @@ class AiVisionService {
 
     try {
       // 2. Se houver endpoint remoto configurado, faz chamada HTTP
-      if (_apiEndpoint != null && _apiEndpoint!.isNotEmpty) {
+      final endpoint = _apiEndpoint;
+      if (endpoint != null && endpoint.isNotEmpty) {
         return await _callRemoteAiPipeline(
           imageUrl: imageUrl,
           imageBytes: imageBytes,
@@ -119,15 +125,33 @@ class AiVisionService {
     required PetType petType,
     required BoundingBoxEntity? selectedBox,
   }) async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+    };
+
+    // Adiciona headers de autenticação quando disponíveis
+    final token = _authToken;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+      headers['apikey'] = token;
+    }
+
+    final bodyMap = <String, dynamic>{
+      'image_url': imageUrl,
+      'pet_type': petType.name,
+      'selected_box': selectedBox?.toJson(),
+    };
+
+    // Inclui os bytes da imagem como base64 quando disponíveis (útil para URLs privadas)
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      bodyMap['image_base64'] = base64Encode(imageBytes);
+    }
+
     final response = await _httpClient
         .post(
           Uri.parse('$_apiEndpoint/analyze'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'image_url': imageUrl,
-            'pet_type': petType.name,
-            'selected_box': selectedBox?.toJson(),
-          }),
+          headers: headers,
+          body: jsonEncode(bodyMap),
         )
         .timeout(_timeout);
 

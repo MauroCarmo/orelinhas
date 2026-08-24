@@ -65,7 +65,7 @@ class PetFoundRepository {
   }
 
   /// Insere um novo alerta de pet encontrado.
-  Future<void> createAlert(String userId, PetFoundAlertEntity alert) async {
+  Future<PetFoundAlertEntity> createAlert(String userId, PetFoundAlertEntity alert) async {
     _logger.i('Iniciando criação de alerta de pet encontrado no repositório.', context: {'userId': userId});
 
     final sanitizedAlert = alert.copyWith(
@@ -81,8 +81,14 @@ class PetFoundRepository {
     );
 
     try {
-      await _supabase.from('pet_found_alerts').insert(sanitizedAlert.toJson());
-      _logger.i('Alerta de pet encontrado inserido com sucesso.', context: {'userId': userId});
+      final data = await _supabase
+          .from('pet_found_alerts')
+          .insert(sanitizedAlert.toJson())
+          .select()
+          .single();
+      final created = PetFoundAlertEntity.fromJson(data);
+      _logger.i('Alerta de pet encontrado inserido com sucesso.', context: {'userId': userId, 'id': created.id});
+      return created;
     } catch (e, st) {
       _logger.e('Erro técnico ao inserir alerta no Supabase.', error: e, stackTrace: st, context: {'userId': userId});
       throw AppErrorMapper.map(e, st);

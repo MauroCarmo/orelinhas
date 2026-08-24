@@ -24,4 +24,6 @@ class AppRoutes {
   static String publicProfile(String userId) => '/public-profile/$userId';
   // Rota para correspondências de reconhecimento visual de pets
   static String petMatches(String id) => '/pet-matches/$id';
+  // Rota para central de notificações
+  static const String notifications = '/notifications';
 }

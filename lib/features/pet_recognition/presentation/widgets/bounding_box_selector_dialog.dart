@@ -88,7 +88,7 @@ class _BoundingBoxSelectorDialogState extends State<BoundingBoxSelectorDialog> {
                           width: imgWidth,
                           height: imgHeight,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (context, error, stackTrace) => Container(
                             width: imgWidth,
                             height: imgHeight,
                             color: Colors.grey.shade300,
@@ -125,8 +125,8 @@ class _BoundingBoxSelectorDialogState extends State<BoundingBoxSelectorDialog> {
                                   width: isSelected ? 3 : 2,
                                 ),
                                 color: isSelected
-                                    ? Colors.green.withOpacity(0.25)
-                                    : Colors.yellow.withOpacity(0.15),
+                                    ? Colors.green.withValues(alpha: 0.25)
+                                    : Colors.yellow.withValues(alpha: 0.15),
                               ),
                               child: Align(
                                 alignment: Alignment.topLeft,
