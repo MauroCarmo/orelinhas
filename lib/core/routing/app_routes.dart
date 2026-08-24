@@ -13,4 +13,6 @@ class AppRoutes {
   static String petLostEdit(String id) => '/pet-lost/edit/$id';
   // Rota para perfil público, com ID do usuário
   static String publicProfile(String userId) => '/public-profile/$userId';
+  // Rota para correspondências de reconhecimento visual de pets
+  static String petMatches(String id) => '/pet-matches/$id';
 }

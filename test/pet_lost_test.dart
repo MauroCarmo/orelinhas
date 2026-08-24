@@ -21,6 +21,8 @@ void main() {
       DateTime? lostDate,
       String contact = '11999998888',
       String? imageUrl = 'https://example.com/rex.png',
+      double? latitude = -23.5505,
+      double? longitude = -46.6333,
     }) {
       return PetLostAlertEntity(
         id: 'alert-uuid-123',
@@ -34,6 +36,8 @@ void main() {
         lostDate: lostDate ?? DateTime.now().subtract(const Duration(days: 1)),
         contact: contact,
         imageUrl: imageUrl,
+        latitude: latitude,
+        longitude: longitude,
       );
     }
 
@@ -111,9 +115,9 @@ void main() {
       expect(errors, isEmpty);
     });
 
-    test('Deve aceitar imageUrl como opcional (null)', () {
+    test('Deve validar imageUrl como obrigatória', () {
       final errors = validEntity(imageUrl: null).validate();
-      expect(errors, isEmpty);
+      expect(errors.any((e) => e.contains('foto do pet')), isTrue);
     });
 
     test('Domínio NÃO sanitiza dados - preserva HTML/scripts intactos', () {
