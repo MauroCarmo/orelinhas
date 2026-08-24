@@ -472,13 +472,6 @@ class _AlertListBuilder extends ConsumerWidget {
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.auto_awesome, size: 18, color: Colors.blue),
-                                label: const Text('Buscar Matches'),
-                                onPressed: () => context.push(
-                                  AppRoutes.petMatches(alert.id),
-                                ),
-                              ),
                               TextButton.icon(
                                 icon: const Icon(Icons.edit, size: 18),
                                 label: const Text('Editar'),
@@ -520,14 +513,6 @@ class _AlertListBuilder extends ConsumerWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.auto_awesome, size: 18, color: Colors.blue),
-                                label: const Text('Matches'),
-                                onPressed: () => context.push(
-                                  AppRoutes.petMatches(alert.id),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
                               ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.green,

@@ -2,6 +2,25 @@ import 'dart:math' as math;
 
 /// Utilitários matemáticos para operações com vetores de embeddings (ex: 768 dimensões).
 class VectorMath {
+  /// Converte com segurança dados de embedding vindos do Supabase/PostgREST.
+  /// Suporta tanto List<dynamic> quanto String no formato pgvector (ex: "[0.12, -0.34, ...]").
+  static List<double>? parseEmbedding(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is List) {
+      return raw.map((e) => (e as num).toDouble()).toList();
+    }
+    if (raw is String) {
+      final clean = raw.replaceAll('[', '').replaceAll(']', '').trim();
+      if (clean.isEmpty) return null;
+      return clean
+          .split(',')
+          .map((s) => double.tryParse(s.trim()))
+          .whereType<double>()
+          .toList();
+    }
+    return null;
+  }
+
   /// Calcula a norma L2 (magnitude Euclidiana) de um vetor.
   static double l2Norm(List<double> vector) {
     if (vector.isEmpty) return 0.0;

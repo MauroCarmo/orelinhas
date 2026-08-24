@@ -248,6 +248,7 @@ class AiVisionService {
 
       final embedding = _generateDeterministicSiglipEmbedding(
         seed: '$imageUrl:${targetBox.xMin}:${targetBox.yMin}',
+        petType: petType,
       );
 
       return VisionAnalysisResult(
@@ -272,6 +273,7 @@ class AiVisionService {
     // Geração de embedding SigLIP (768 dimensões)
     final embedding = _generateDeterministicSiglipEmbedding(
       seed: '$imageUrl:${petType.name}',
+      petType: petType,
     );
 
     return VisionAnalysisResult(
@@ -282,11 +284,29 @@ class AiVisionService {
     );
   }
 
-  /// Gera um vetor de 768 dimensões determinístico e unitário (L2 normalized) a partir de uma seed
-  List<double> _generateDeterministicSiglipEmbedding({required String seed}) {
+  /// Gera um vetor de 768 dimensões determinístico e unitário (L2 normalized) a partir de uma seed.
+  /// Em ambiente de simulação/local, animais da mesma espécie compartilham um cluster base
+  /// com pequenas variações individuais, produzindo similaridades realistas (75% a 92%).
+  List<double> _generateDeterministicSiglipEmbedding({
+    required String seed,
+    required PetType petType,
+  }) {
+    // 1. Vetor base da espécie (cão vs gato têm clusters distintos no SigLIP)
+    final speciesBaseSeed = petType == PetType.dog ? 777001 : 888002;
+    final speciesRandom = math.Random(speciesBaseSeed);
+    final speciesVector = List<double>.generate(768, (_) => (speciesRandom.nextDouble() * 2.0) - 1.0);
+
+    // 2. Variação determinística da imagem específica
     final int hash = seed.hashCode;
-    final random = math.Random(hash);
-    final rawVector = List<double>.generate(768, (_) => (random.nextDouble() * 2.0) - 1.0);
-    return VectorMath.l2Normalize(rawVector);
+    final imageRandom = math.Random(hash);
+    final variationVector = List<double>.generate(768, (_) => (imageRandom.nextDouble() * 2.0) - 1.0);
+
+    // 3. Combina o arquétipo da espécie com a variação individual
+    final combined = List<double>.generate(
+      768,
+      (i) => speciesVector[i] * 0.82 + variationVector[i] * 0.18,
+    );
+
+    return VectorMath.l2Normalize(combined);
   }
 }

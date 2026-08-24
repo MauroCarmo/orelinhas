@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../pet_lost/data/pet_lost_repository.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart';
 import '../../../pet_lost/presentation/controllers/pet_lost_controller.dart';
 import '../../domain/models/pet_match_candidate_entity.dart';
@@ -32,17 +34,33 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
     });
   }
 
-  void _loadMatches() {
-    final alertsAsync = ref.read(petLostControllerProvider);
-    alertsAsync.whenData((alerts) {
-      try {
-        final pet = alerts.firstWhere((e) => e.id == widget.petId);
-        setState(() {
-          _targetPet = pet;
-        });
-        ref.read(petMatchControllerProvider.notifier).findMatchesForPet(pet: pet);
-      } catch (_) {}
-    });
+  Future<void> _loadMatches() async {
+    PetLostAlertEntity? pet;
+
+    // 1. Tenta obter do estado local do controller
+    final currentAlerts = ref.read(petLostControllerProvider).value;
+    if (currentAlerts != null && currentAlerts.isNotEmpty) {
+      pet = currentAlerts.where((e) => e.id == widget.petId).firstOrNull;
+    }
+
+    // 2. Se não estiver no cache em memória, busca diretamente no repositório
+    if (pet == null) {
+      final user = ref.read(currentUserProvider);
+      if (user != null) {
+        try {
+          final userAlerts =
+              await ref.read(petLostRepositoryProvider).getUserAlerts(user.id);
+          pet = userAlerts.where((e) => e.id == widget.petId).firstOrNull;
+        } catch (_) {}
+      }
+    }
+
+    if (pet != null && mounted) {
+      setState(() {
+        _targetPet = pet;
+      });
+      ref.read(petMatchControllerProvider.notifier).findMatchesForPet(pet: pet);
+    }
   }
 
   Future<void> _contactTutor(String phone) async {
@@ -209,12 +227,12 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
             ],
           ),
           Slider(
-            value: state.minSimilarityThreshold,
-            min: 0.30,
+            value: state.minSimilarityThreshold.clamp(0.50, 0.90),
+            min: 0.50,
             max: 0.90,
-            divisions: 12,
+            divisions: 8,
             activeColor: AppColors.primary,
-            label: '${(state.minSimilarityThreshold * 100).toStringAsFixed(0)}%',
+            label: '${(state.minSimilarityThreshold.clamp(0.50, 0.90) * 100).toStringAsFixed(0)}%',
             onChangeEnd: (val) {
               if (_targetPet != null) {
                 ref

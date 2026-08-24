@@ -1,4 +1,5 @@
 import '../../../pet_lost/domain/pet_lost_entity.dart';
+import '../utils/vector_math.dart';
 import 'pet_image_analysis_entity.dart';
 
 /// Representa o perfil visual consolidado do pet, incluindo todas as imagens enviadas,
@@ -18,14 +19,17 @@ class PetVisualProfileEntity {
     this.lastAnalyzedAt,
   });
 
-  /// Lista de análises de imagem que possuem embeddings válidos.
+  /// Retorna se o perfil possui pelo menos uma imagem processada com sucesso.
+  bool get hasValidImages => images.any((img) => img.hasValidEmbedding);
+
+  /// Retorna a lista de análises de imagem que possuem embeddings válidos.
   List<PetImageAnalysisEntity> get validImageAnalyses =>
       images.where((img) => img.hasValidEmbedding).toList();
 
   /// Total de imagens válidas para comparação visual.
   int get validEmbeddingsCount => validImageAnalyses.length;
 
-  /// Indica se o perfil possui pelo menos um embedding válido para busca visual.
+  /// Retorna se o perfil possui um embedding agregado válido de 768 dimensões.
   bool get hasVisualEmbedding =>
       aggregatedEmbedding != null && aggregatedEmbedding!.length == 768;
 
@@ -41,7 +45,6 @@ class PetVisualProfileEntity {
     );
 
     final imagesJson = json['images'] as List<dynamic>?;
-    final embeddingList = json['aggregated_embedding'] as List<dynamic>?;
 
     return PetVisualProfileEntity(
       petId: json['pet_id'] as String? ?? '',
@@ -52,9 +55,7 @@ class PetVisualProfileEntity {
                   PetImageAnalysisEntity.fromJson(e as Map<String, dynamic>))
               .toList()
           : const [],
-      aggregatedEmbedding: embeddingList
-          ?.map((e) => (e as num).toDouble())
-          .toList(),
+      aggregatedEmbedding: VectorMath.parseEmbedding(json['aggregated_embedding']),
       lastAnalyzedAt: json['last_analyzed_at'] != null
           ? DateTime.parse(json['last_analyzed_at'] as String)
           : null,

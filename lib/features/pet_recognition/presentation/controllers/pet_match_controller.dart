@@ -16,7 +16,7 @@ class PetMatchState {
   const PetMatchState({
     this.isLoading = false,
     this.matches = const [],
-    this.minSimilarityThreshold = 0.75,
+    this.minSimilarityThreshold = 0.70,
     this.errorMessage,
     this.queryVisualProfile,
   });

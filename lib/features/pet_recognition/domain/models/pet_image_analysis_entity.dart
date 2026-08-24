@@ -1,3 +1,4 @@
+import '../utils/vector_math.dart';
 import 'analysis_status.dart';
 import 'bounding_box_entity.dart';
 
@@ -35,7 +36,6 @@ class PetImageAnalysisEntity {
   factory PetImageAnalysisEntity.fromJson(Map<String, dynamic> json) {
     final statusStr = json['status'] as String?;
     final detectedJson = json['detected_animals'] as List<dynamic>?;
-    final embeddingList = json['embedding'] as List<dynamic>?;
 
     return PetImageAnalysisEntity(
       id: json['id'] as String? ?? '',
@@ -51,9 +51,7 @@ class PetImageAnalysisEntity {
               json['selected_animal'] as Map<String, dynamic>,
             )
           : null,
-      embedding: embeddingList
-          ?.map((e) => (e as num).toDouble())
-          .toList(),
+      embedding: VectorMath.parseEmbedding(json['embedding']),
       errorReason: json['error_reason'] as String?,
       processedAt: json['processed_at'] != null
           ? DateTime.parse(json['processed_at'] as String)
