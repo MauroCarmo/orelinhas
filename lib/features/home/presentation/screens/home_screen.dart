@@ -48,7 +48,7 @@ class HomeScreen extends ConsumerWidget {
                     text: profileName,
                     style: const TextStyle(color: AppColors.primary),
                   ),
-                  const TextSpan(text: '! 👋'),
+                  const TextSpan(text: '!'),
                 ],
               ),
             ),
