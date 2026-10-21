@@ -84,16 +84,18 @@ class PetFoundController extends AsyncNotifier<List<PetFoundAlertEntity>> {
           petType: createdAlert.petType,
           imageUrls: [createdAlert.imageUrl],
         ).then((foundVisualProfile) async {
-          // Busca todos os pets perdidos ativos para verificar se este pet encontrado corresponde a algum
-          final activeLostPets = await petLostRepo.getPublicAlerts(limit: 50);
-          for (final lostPet in activeLostPets) {
-            if (lostPet.petType != createdAlert.petType) continue;
-            final lostVisualProfile = await recognitionRepo.getVisualProfile(lostPet.id);
-            await recognitionRepo.findMatches(
-              queryPet: lostPet,
-              queryVisualProfile: lostVisualProfile,
-            );
-          }
+          // Busca exclusivamente pets perdidos ativos da MESMA espécie
+          final activeLostPets = await petLostRepo.getPublicAlerts(
+            limit: 50,
+            petType: createdAlert.petType,
+          );
+
+          // Executa o matching automático otimizado (1:N com representação única)
+          await recognitionRepo.matchFoundPetAgainstLostPets(
+            foundPet: createdAlert,
+            foundVisualProfile: foundVisualProfile,
+            activeLostPets: activeLostPets,
+          );
         }).catchError((e) {
           _logger.w('Processamento de IA em background falhou suavemente.', error: e);
         });

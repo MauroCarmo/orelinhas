@@ -19,6 +19,7 @@ import '../../features/pet_adoption/presentation/screens/pet_adoption_list_scree
 import '../../features/pet_adoption/presentation/screens/create_pet_adoption_screen.dart';
 import '../../features/notification/presentation/screens/notification_list_screen.dart';
 import '../../features/pet_recognition/presentation/screens/pet_match_results_screen.dart';
+import '../../features/pet_recognition/presentation/screens/pet_match_detail_screen.dart';
 import 'app_routes.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -154,6 +155,20 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           return PetMatchResultsScreen(
             petId: id,
             initialHighlightPetId: targetFoundPetId,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/match-detail/:foundId',
+        builder: (context, state) {
+          final foundId = state.pathParameters['foundId']!;
+          final lostId = state.uri.queryParameters['lostId'];
+          final scoreStr = state.uri.queryParameters['score'];
+          final score = scoreStr != null ? double.tryParse(scoreStr) : null;
+          return PetMatchDetailScreen(
+            foundPetId: foundId,
+            lostPetId: lostId,
+            initialScore: score,
           );
         },
       ),

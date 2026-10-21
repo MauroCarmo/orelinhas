@@ -17,6 +17,25 @@ class PetFoundRepository {
 
   PetFoundRepository(this._supabase);
 
+  /// Recupera um alerta de pet encontrado pelo ID específico.
+  Future<PetFoundAlertEntity?> getAlertById(String id) async {
+    _logger.i('Buscando alerta de pet encontrado por ID.', context: {'id': id});
+
+    try {
+      final data = await _supabase
+          .from('pet_found_alerts')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+
+      if (data == null) return null;
+      return PetFoundAlertEntity.fromJson(data);
+    } catch (e, st) {
+      _logger.w('Alerta de pet encontrado não encontrado ou erro.', error: e, stackTrace: st);
+      return null;
+    }
+  }
+
   /// Recupera todos os alertas públicos (Feed).
   Future<List<PetFoundAlertEntity>> getPublicAlerts({int limit = 20, int offset = 0}) async {
     _logger.i('Buscando feed público de alertas de pets encontrados.', context: {'limit': limit, 'offset': offset});

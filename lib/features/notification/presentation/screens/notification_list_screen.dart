@@ -44,19 +44,22 @@ class NotificationListScreen extends ConsumerWidget {
 
     // 2. Redirecionamento baseado no tipo e IDs relacionados
     if (notification.type == NotificationType.matchFound) {
-      if (notification.relatedPetId != null &&
-          notification.relatedPetId!.isNotEmpty) {
-        // Redireciona diretamente para a tela de matches com foco no pet encontrado correspondente
+      final foundId = notification.relatedMatchId;
+      if (foundId != null && foundId.isNotEmpty) {
+        final rawScore = notification.metadata?['similarity_score'];
+        final score = rawScore is num ? rawScore.toDouble() : null;
+
+        // Abre diretamente os detalhes da correspondência do pet encontrado sem recálculo de IA
         context.push(
-          AppRoutes.petMatches(
-            notification.relatedPetId!,
-            targetFoundPetId: notification.relatedMatchId,
+          AppRoutes.matchDetail(
+            foundPetId: foundId,
+            lostPetId: notification.relatedPetId,
+            score: score,
           ),
         );
-      } else if (notification.relatedMatchId != null &&
-          notification.relatedMatchId!.isNotEmpty) {
-        // Fallback: se apenas o pet encontrado estiver informado, abre o anúncio do pet encontrado
-        context.push(AppRoutes.petFoundEdit(notification.relatedMatchId!));
+      } else if (notification.relatedPetId != null &&
+          notification.relatedPetId!.isNotEmpty) {
+        context.push(AppRoutes.petMatches(notification.relatedPetId!));
       }
     } else if (notification.type == NotificationType.petStatusUpdate) {
       if (notification.relatedPetId != null &&

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/logger/app_logger.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart';
+import '../../../pet_found/domain/pet_found_entity.dart';
 import '../../domain/models/analysis_status.dart';
 import '../../domain/models/bounding_box_entity.dart';
 import '../../domain/models/pet_cadastral_filter_entity.dart';
@@ -247,6 +248,107 @@ class PetRecognitionRepository {
 
     // Ordena matches do maior score para o menor
     matches.sort((a, b) => b.similarityScore.compareTo(a.similarityScore));
+    return matches;
+  }
+
+  /// Executa o matching automático simplificado e otimizado quando um pet encontrado é cadastrado.
+  /// 
+  /// Compara a representação visual única do pet encontrado exclusivamente contra os pets perdidos ativos
+  /// da mesma espécie fornecidos em [activeLostPets].
+  /// 
+  /// - Utiliza a representação visual única por pet (embedding agregado quando disponível, ou o embedding individual).
+  /// - Não recarrega os pets encontrados nem recalcula correspondências antigas desnecessariamente.
+  /// - Persiste na tabela matches apenas os pares que atingirem [minSimilarity] (padrão 0.70).
+  /// - Garante a ordem correta dos identificadores: lost_pet_id (pet perdido) e found_pet_id (pet encontrado).
+  Future<List<PetMatchCandidateEntity>> matchFoundPetAgainstLostPets({
+    required PetFoundAlertEntity foundPet,
+    required PetVisualProfileEntity foundVisualProfile,
+    required List<PetLostAlertEntity> activeLostPets,
+    double minSimilarity = 0.70,
+  }) async {
+    _logger.i('Iniciando matching automático para pet encontrado.', context: {
+      'foundPetId': foundPet.id,
+      'petType': foundPet.petType.name,
+      'candidateLostCount': activeLostPets.length,
+    });
+
+    // 1. Verificação de espécie e elegibilidade para IA visual
+    if (!foundVisualProfile.isEligibleForVisualAi) {
+      _logger.i('Espécie não elegível para matching visual automático.', context: {
+        'petType': foundPet.petType.name,
+      });
+      return [];
+    }
+
+    // 2. Extrai a representação visual única do pet encontrado
+    final foundEmbedding = foundVisualProfile.representativeEmbedding;
+    if (foundEmbedding == null || foundEmbedding.length != 768) {
+      _logger.w('Pet encontrado sem representação visual válida de 768d.', context: {
+        'petId': foundPet.id,
+      });
+      return [];
+    }
+
+    // 3. Filtra estritamente pets perdidos ativos da mesma espécie e com ID distinto
+    final eligibleLostPets = activeLostPets
+        .where((lost) => lost.petType == foundPet.petType && lost.id != foundPet.id)
+        .toList();
+
+    if (eligibleLostPets.isEmpty) {
+      _logger.i('Nenhum pet perdido ativo da mesma espécie encontrado para comparação.');
+      return [];
+    }
+
+    // 4. Carrega os perfis visuais dos pets perdidos candidatos em lote
+    final lostIds = eligibleLostPets.map((p) => p.id).toList();
+    final lostProfilesMap = await _supabaseService.getVisualProfilesByIds(lostIds);
+
+    final List<PetMatchCandidateEntity> matches = [];
+
+    // 5. Comparação 1:N direta entre o novo pet encontrado e os pets perdidos elegíveis
+    for (final lostPet in eligibleLostPets) {
+      final lostProfile = lostProfilesMap[lostPet.id];
+      if (lostProfile == null) continue;
+
+      final lostEmbedding = lostProfile.representativeEmbedding;
+      if (lostEmbedding == null || lostEmbedding.length != 768) continue;
+
+      // Similaridade de cosseno direto entre as representações visuais únicas
+      final similarity = VectorMath.cosineSimilarity(foundEmbedding, lostEmbedding);
+
+      if (similarity >= minSimilarity) {
+        // Persiste no Supabase com a semântica canônica:
+        // lost_pet_id = ID do pet perdido, found_pet_id = ID do pet encontrado
+        await _supabaseService.saveMatch(
+          lostPetId: lostPet.id,
+          foundPetId: foundPet.id,
+          similarityScore: similarity,
+          matchMethod: 'visual_single_vector',
+          individualScores: [similarity],
+        );
+
+        matches.add(
+          PetMatchCandidateEntity(
+            matchedPet: lostPet,
+            visualProfile: lostProfile,
+            similarityScore: similarity,
+            matchMethod: MatchMethod.visual,
+            individualImageScores: [similarity],
+            matchingDetails:
+                'Correspondência visual automática por representação única.',
+          ),
+        );
+      }
+    }
+
+    // 6. Ordena do maior score para o menor
+    matches.sort((a, b) => b.similarityScore.compareTo(a.similarityScore));
+
+    _logger.i('Matching automático concluído para o pet encontrado.', context: {
+      'foundPetId': foundPet.id,
+      'matchesRecorded': matches.length,
+    });
+
     return matches;
   }
 }

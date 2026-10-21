@@ -75,6 +75,42 @@ class SupabasePetRecognitionService {
     return _inMemoryProfiles[petId];
   }
 
+  /// Recupera perfis visuais em lote por lista de IDs de pets.
+  Future<Map<String, PetVisualProfileEntity>> getVisualProfilesByIds(
+    List<String> petIds,
+  ) async {
+    if (petIds.isEmpty) return {};
+    final Map<String, PetVisualProfileEntity> results = {};
+    final List<String> missingIds = [];
+
+    for (final id in petIds) {
+      if (_inMemoryProfiles.containsKey(id)) {
+        results[id] = _inMemoryProfiles[id]!;
+      } else {
+        missingIds.add(id);
+      }
+    }
+
+    if (missingIds.isEmpty) return results;
+
+    try {
+      final data = await _supabase
+          .from('pet_visual_profiles')
+          .select()
+          .inFilter('pet_id', missingIds);
+
+      for (final row in data) {
+        final profile = PetVisualProfileEntity.fromJson(row);
+        _inMemoryProfiles[profile.petId] = profile;
+        results[profile.petId] = profile;
+      }
+    } catch (e, st) {
+      _logger.w('Erro ao consultar perfis visuais em lote no Supabase.', error: e, stackTrace: st);
+    }
+
+    return results;
+  }
+
   /// Recupera todos os perfis visuais cadastrados para uma espécie específica.
   /// A espécie é um filtro estrito (cão != gato).
   Future<List<PetVisualProfileEntity>> getVisualProfilesBySpecies(
@@ -242,5 +278,23 @@ class SupabasePetRecognitionService {
     } catch (e, st) {
       _logger.w('Aviso ao persistir match no Supabase.', error: e, stackTrace: st);
     }
+  }
+  /// Consulta a pontuação de similaridade persistida para um par de pets na tabela matches.
+  Future<double?> getMatchScore(String lostPetId, String foundPetId) async {
+    try {
+      final data = await _supabase
+          .from('matches')
+          .select('similarity_score')
+          .eq('lost_pet_id', lostPetId)
+          .eq('found_pet_id', foundPetId)
+          .maybeSingle();
+
+      if (data != null && data['similarity_score'] != null) {
+        return (data['similarity_score'] as num).toDouble();
+      }
+    } catch (e, st) {
+      _logger.w('Aviso ao consultar score em matches.', error: e, stackTrace: st);
+    }
+    return null;
   }
 }

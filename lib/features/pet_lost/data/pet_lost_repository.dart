@@ -17,15 +17,48 @@ class PetLostRepository {
 
   PetLostRepository(this._supabase);
 
-  /// Recupera todos os alertas públicos (Feed).
-  Future<List<PetLostAlertEntity>> getPublicAlerts({int limit = 20, int offset = 0}) async {
-    _logger.i('Buscando feed público de alertas de pets perdidos.', context: {'limit': limit, 'offset': offset});
+  /// Recupera um alerta de pet perdido pelo ID específico.
+  Future<PetLostAlertEntity?> getAlertById(String id) async {
+    _logger.i('Buscando alerta de pet perdido por ID.', context: {'id': id});
 
     try {
       final data = await _supabase
           .from('pet_lost_alerts')
           .select()
-          .eq('status', 'active')
+          .eq('id', id)
+          .maybeSingle();
+
+      if (data == null) return null;
+      return PetLostAlertEntity.fromJson(data);
+    } catch (e, st) {
+      _logger.w('Alerta de pet perdido não encontrado ou erro.', error: e, stackTrace: st);
+      return null;
+    }
+  }
+
+  /// Recupera todos os alertas públicos (Feed) com filtro opcional por espécie.
+  Future<List<PetLostAlertEntity>> getPublicAlerts({
+    int limit = 20,
+    int offset = 0,
+    PetType? petType,
+  }) async {
+    _logger.i('Buscando feed público de alertas de pets perdidos.', context: {
+      'limit': limit,
+      'offset': offset,
+      'petType': petType?.name,
+    });
+
+    try {
+      var query = _supabase
+          .from('pet_lost_alerts')
+          .select()
+          .eq('status', 'active');
+
+      if (petType != null) {
+        query = query.eq('pet_type', petType.name);
+      }
+
+      final data = await query
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
 

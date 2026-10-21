@@ -260,5 +260,19 @@ void main() {
       final fallbackRoute = AppRoutes.petFoundEdit('found-789');
       expect(fallbackRoute, equals('/pet-found/edit/found-789'));
     });
+
+    test('AppRoutes.matchDetail deve gerar URI correta com foundPetId, lostPetId e score', () {
+      final route = AppRoutes.matchDetail(
+        foundPetId: 'found-789',
+        lostPetId: 'lost-123',
+        score: 0.85,
+      );
+      expect(route, equals('/match-detail/found-789?lostId=lost-123&score=0.85'));
+    });
+
+    test('AppRoutes.matchDetail sem parâmetros opcionais deve gerar apenas /match-detail/:id', () {
+      final route = AppRoutes.matchDetail(foundPetId: 'found-789');
+      expect(route, equals('/match-detail/found-789'));
+    });
   });
 }

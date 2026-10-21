@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orelinhas/features/pet_lost/domain/pet_lost_entity.dart';
+import 'package:orelinhas/features/pet_found/domain/pet_found_entity.dart';
+import 'package:orelinhas/features/pet_recognition/domain/models/pet_image_analysis_entity.dart';
 import 'package:orelinhas/features/pet_recognition/domain/models/analysis_status.dart';
 import 'package:orelinhas/features/pet_recognition/domain/models/bounding_box_entity.dart';
 import 'package:orelinhas/features/pet_recognition/domain/models/pet_visual_profile_entity.dart';
@@ -359,6 +361,197 @@ void main() {
 
       final matches = await repository.findMatches(queryPet: birdQuery);
       expect(matches, isEmpty); // Sem outros pássaros no mock banco
+    });
+  });
+
+  // =========================================================================
+  // GRUPO 5: MATCHING AUTOMÁTICO OTIMIZADO DE PET ENCONTRADO
+  // =========================================================================
+  group('Matching Automático Otimizado de Pet Encontrado (matchFoundPetAgainstLostPets)', () {
+    late AiVisionService aiService;
+    late SupabasePetRecognitionService supabaseService;
+    late PetRecognitionRepository repository;
+
+    setUp(() {
+      aiService = AiVisionService(allowSimulationForTesting: true);
+      supabaseService = SupabasePetRecognitionService(FakeSupabaseClient());
+      repository = PetRecognitionRepository(aiService, supabaseService);
+    });
+
+    test('representativeEmbedding usa embedding individual para pet com uma imagem', () {
+      final vec = VectorMath.l2Normalize(List.generate(768, (i) => 1.0));
+      final profile = PetVisualProfileEntity(
+        petId: 'pet_single_1',
+        petType: PetType.dog,
+        images: [
+          PetImageAnalysisEntity(
+            id: 'img_1',
+            imageUrl: 'https://example.com/p1.jpg',
+            status: AnalysisStatus.processed,
+            embedding: vec,
+          ),
+        ],
+        aggregatedEmbedding: vec,
+      );
+
+      expect(profile.representativeEmbedding, isNotNull);
+      expect(profile.representativeEmbedding!.length, equals(768));
+      expect(profile.representativeEmbedding, equals(vec));
+    });
+
+    test('representativeEmbedding usa aggregatedEmbedding para pet com múltiplas fotos', () {
+      final vec1 = VectorMath.l2Normalize(List.generate(768, (i) => 1.0));
+      final vec2 = VectorMath.l2Normalize(List.generate(768, (i) => 2.0));
+      final agg = VectorMath.computeAggregatedEmbedding([vec1, vec2]);
+
+      final profile = PetVisualProfileEntity(
+        petId: 'pet_multi_1',
+        petType: PetType.dog,
+        images: [
+          PetImageAnalysisEntity(
+            id: 'img_1',
+            imageUrl: 'https://example.com/p1.jpg',
+            status: AnalysisStatus.processed,
+            embedding: vec1,
+          ),
+          PetImageAnalysisEntity(
+            id: 'img_2',
+            imageUrl: 'https://example.com/p2.jpg',
+            status: AnalysisStatus.processed,
+            embedding: vec2,
+          ),
+        ],
+        aggregatedEmbedding: agg,
+      );
+
+      expect(profile.representativeEmbedding, equals(agg));
+    });
+
+    test('matchFoundPetAgainstLostPets compara pet encontrado apenas com mesma espécie e pontua com cosseno', () async {
+      final baseVec = VectorMath.l2Normalize(List.generate(768, (i) => (i + 1).toDouble()));
+
+      // Pet encontrado (cão)
+      final foundAlert = PetFoundAlertEntity(
+        id: 'found_dog_10',
+        userId: 'user_finder',
+        petType: PetType.dog,
+        breed: 'Vira-lata',
+        description: 'Cão encontrado na praça',
+        foundLocation: 'Praça da Sé',
+        foundDate: DateTime.now(),
+        imageUrl: 'https://example.com/found.jpg',
+      );
+      final foundProfile = PetVisualProfileEntity(
+        petId: foundAlert.id,
+        petType: PetType.dog,
+        aggregatedEmbedding: baseVec,
+      );
+      await supabaseService.saveVisualProfile(foundProfile);
+
+      // Pet perdido compatível (mesma espécie e vetor idêntico -> score ~ 1.0)
+      final matchingLostDog = PetLostAlertEntity(
+        id: 'lost_dog_20',
+        userId: 'user_owner_1',
+        petName: 'Tobby',
+        petType: PetType.dog,
+        breed: 'Vira-lata',
+        description: 'Perdido perto da Sé',
+        lastLocation: 'Sé',
+        lostDate: DateTime.now(),
+        contact: '11999998888',
+        imageUrl: 'https://example.com/lost1.jpg',
+      );
+      final lostProfileMatch = PetVisualProfileEntity(
+        petId: matchingLostDog.id,
+        petType: PetType.dog,
+        aggregatedEmbedding: baseVec,
+      );
+      await supabaseService.saveVisualProfile(lostProfileMatch);
+
+      // Pet perdido incompatível na foto (mesma espécie, vetor ortogonal -> score ~ 0.0)
+      final orthogonalVec = VectorMath.l2Normalize(List.generate(768, (i) => i.isEven ? 1.0 : -1.0));
+      final nonMatchingLostDog = PetLostAlertEntity(
+        id: 'lost_dog_21',
+        userId: 'user_owner_2',
+        petName: 'Bob',
+        petType: PetType.dog,
+        breed: 'Poodle',
+        description: 'Poodle branco',
+        lastLocation: 'Pinheiros',
+        lostDate: DateTime.now(),
+        contact: '11999997777',
+        imageUrl: 'https://example.com/lost2.jpg',
+      );
+      final lostProfileNonMatch = PetVisualProfileEntity(
+        petId: nonMatchingLostDog.id,
+        petType: PetType.dog,
+        aggregatedEmbedding: orthogonalVec,
+      );
+      await supabaseService.saveVisualProfile(lostProfileNonMatch);
+
+      // Pet perdido de espécie diferente (gato -> deve ser totalmente ignorado)
+      final lostCat = PetLostAlertEntity(
+        id: 'lost_cat_30',
+        userId: 'user_owner_3',
+        petName: 'Mimi',
+        petType: PetType.cat,
+        breed: 'Siamês',
+        description: 'Gata siamesa',
+        lastLocation: 'Sé',
+        lostDate: DateTime.now(),
+        contact: '11999996666',
+        imageUrl: 'https://example.com/cat.jpg',
+      );
+      final lostProfileCat = PetVisualProfileEntity(
+        petId: lostCat.id,
+        petType: PetType.cat,
+        aggregatedEmbedding: baseVec, // mesmo se vetor for idêntico, espécie impede
+      );
+      await supabaseService.saveVisualProfile(lostProfileCat);
+
+      // Executa o matching automático otimizado
+      final matches = await repository.matchFoundPetAgainstLostPets(
+        foundPet: foundAlert,
+        foundVisualProfile: foundProfile,
+        activeLostPets: [matchingLostDog, nonMatchingLostDog, lostCat],
+        minSimilarity: 0.70,
+      );
+
+      // Verificações estritas:
+      // 1. Apenas o cão compatível atingiu o limiar de 0.70
+      expect(matches.length, equals(1));
+      expect(matches.first.matchedPet.id, equals('lost_dog_20'));
+      expect(matches.first.similarityScore, closeTo(1.0, 0.001));
+
+      // 2. Não inclui gato de forma alguma
+      expect(matches.any((m) => m.matchedPet.petType == PetType.cat), isFalse);
+
+      // 3. Não inclui cão com score abaixo de 0.70
+      expect(matches.any((m) => m.matchedPet.id == 'lost_dog_21'), isFalse);
+    });
+
+    test('matchFoundPetAgainstLostPets ignora graciosamente espécies não suportadas sem crash', () async {
+      final birdFound = PetFoundAlertEntity(
+        id: 'bird_found_1',
+        userId: 'finder',
+        petType: PetType.other,
+        description: 'Calopsita encontrada',
+        foundLocation: 'Rua das Flores',
+        foundDate: DateTime.now(),
+        imageUrl: 'https://example.com/bird.jpg',
+      );
+      final birdProfile = PetVisualProfileEntity(
+        petId: birdFound.id,
+        petType: PetType.other,
+      );
+
+      final matches = await repository.matchFoundPetAgainstLostPets(
+        foundPet: birdFound,
+        foundVisualProfile: birdProfile,
+        activeLostPets: [],
+      );
+
+      expect(matches, isEmpty);
     });
   });
 }

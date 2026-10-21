@@ -37,6 +37,21 @@ class PetVisualProfileEntity {
   bool get isEligibleForVisualAi =>
       petType == PetType.dog || petType == PetType.cat;
 
+  /// Retorna a representação visual única do perfil:
+  /// - Para pets com múltiplas imagens: o [aggregatedEmbedding] normalizado.
+  /// - Para pets com uma imagem: o [aggregatedEmbedding] (se presente) ou o embedding individual da imagem.
+  List<double>? get representativeEmbedding {
+    if (aggregatedEmbedding != null && aggregatedEmbedding!.length == 768) {
+      return aggregatedEmbedding;
+    }
+    for (final img in images) {
+      if (img.hasValidEmbedding && img.embedding!.length == 768) {
+        return img.embedding;
+      }
+    }
+    return null;
+  }
+
   factory PetVisualProfileEntity.fromJson(Map<String, dynamic> json) {
     final petTypeStr = json['pet_type'] as String? ?? 'other';
     final parsedPetType = PetType.values.firstWhere(
