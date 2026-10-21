@@ -150,7 +150,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/pet-matches/:id',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return PetMatchResultsScreen(petId: id);
+          final targetFoundPetId = state.uri.queryParameters['foundId'];
+          return PetMatchResultsScreen(
+            petId: id,
+            initialHighlightPetId: targetFoundPetId,
+          );
         },
       ),
     ],

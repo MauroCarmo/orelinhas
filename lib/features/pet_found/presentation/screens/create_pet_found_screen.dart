@@ -169,8 +169,10 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
   Future<void> _useCurrentLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
+      if (!mounted) return;
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
+        if (!mounted) return;
         if (permission == LocationPermission.denied) {
           _showErrorDialog(context, [
             'Permissão de localização negada. Você pode definir a localização manualmente no mapa.',
@@ -192,11 +194,13 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         ),
       );
 
+      if (!mounted) return;
       setState(() {
         _selectedLocation = LatLng(position.latitude, position.longitude);
         _mapController.move(_selectedLocation!, 15.0);
       });
     } catch (e) {
+      if (!mounted) return;
       _showErrorDialog(context, [
         'Não foi possível obter a localização atual.',
       ]);
@@ -211,6 +215,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
+        if (!mounted) return;
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageFileName = image.name;
@@ -218,6 +223,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       _showErrorDialog(context, ['Erro ao selecionar imagem.']);
     }
   }
@@ -245,9 +251,11 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       );
       return url;
     } on ValidationException catch (e) {
+      if (!mounted) return null;
       _showErrorDialog(context, [e.message]);
       return null;
     } catch (e) {
+      if (!mounted) return null;
       _showErrorDialog(context, ['Falha ao enviar imagem. Tente novamente.']);
       return null;
     }
@@ -273,6 +281,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     }
 
     final imageUrl = await _uploadImageIfNeeded();
+    if (!mounted) return;
     if (imageUrl == null) {
       return;
     }

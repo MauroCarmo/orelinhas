@@ -26,4 +26,14 @@ class Env {
     }
     return value;
   }
+
+  /// Endpoint do serviço remoto de visão computacional (YOLOv8n + SigLIP).
+  /// Se null ou vazio, o AiVisionService realiza fallback gracioso para o simulador.
+  static String? get aiVisionEndpoint {
+    final value = dotenv.env['AI_VISION_ENDPOINT'];
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    return value.trim();
+  }
 }

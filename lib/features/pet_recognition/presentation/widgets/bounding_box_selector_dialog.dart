@@ -96,7 +96,6 @@ class _BoundingBoxSelectorDialogState extends State<BoundingBoxSelectorDialog> {
                           ),
                         ),
                       ),
-                      // Caixas delimitadoras do YOLO
                       ...widget.detectedAnimals.asMap().entries.map((entry) {
                         final idx = entry.key;
                         final box = entry.value;
@@ -155,25 +154,39 @@ class _BoundingBoxSelectorDialogState extends State<BoundingBoxSelectorDialog> {
                 },
               ),
               const SizedBox(height: 16),
-              // Opções em lista
+              // Opções em lista (sem RadioListTile deprecated)
               ...widget.detectedAnimals.asMap().entries.map((entry) {
                 final idx = entry.key;
                 final box = entry.value;
+                final isSelected = _selected == box;
 
-                return RadioListTile<BoundingBoxEntity>(
-                  value: box,
-                  groupValue: _selected,
-                  title: Text('Animal #${idx + 1} (${box.label})'),
-                  subtitle: Text(
-                    'Confiança: ${(box.confidence * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(fontSize: 12),
+                return InkWell(
+                  onTap: () => setState(() => _selected = box),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.green.withAlpha(20) : null,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? Colors.green : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(
+                        isSelected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        color: isSelected ? Colors.green : Colors.grey,
+                      ),
+                      title: Text('Animal #${idx + 1} (${box.label})'),
+                      subtitle: Text(
+                        'Confiança: ${(box.confidence * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
                   ),
-                  activeColor: Colors.green,
-                  onChanged: (val) {
-                    setState(() {
-                      _selected = val;
-                    });
-                  },
                 );
               }),
             ],

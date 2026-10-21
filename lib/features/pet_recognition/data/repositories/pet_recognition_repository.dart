@@ -90,7 +90,7 @@ class PetRecognitionRepository {
           await _supabaseService.savePetImage(
             petId: petId,
             imageUrl: imgUrl,
-            status: result.status.name,
+            status: result.status.toSnakeCase(),
             embedding: result.embedding768,
           );
         }

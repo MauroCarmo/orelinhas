@@ -46,11 +46,16 @@ class NotificationListScreen extends ConsumerWidget {
     if (notification.type == NotificationType.matchFound) {
       if (notification.relatedPetId != null &&
           notification.relatedPetId!.isNotEmpty) {
-        // Redireciona diretamente para a tela de matches do pet do usuário
-        context.push(AppRoutes.petMatches(notification.relatedPetId!));
+        // Redireciona diretamente para a tela de matches com foco no pet encontrado correspondente
+        context.push(
+          AppRoutes.petMatches(
+            notification.relatedPetId!,
+            targetFoundPetId: notification.relatedMatchId,
+          ),
+        );
       } else if (notification.relatedMatchId != null &&
           notification.relatedMatchId!.isNotEmpty) {
-        // Redireciona para o anúncio do pet encontrado
+        // Fallback: se apenas o pet encontrado estiver informado, abre o anúncio do pet encontrado
         context.push(AppRoutes.petFoundEdit(notification.relatedMatchId!));
       }
     } else if (notification.type == NotificationType.petStatusUpdate) {

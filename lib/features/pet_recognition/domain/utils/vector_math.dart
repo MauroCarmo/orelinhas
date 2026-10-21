@@ -3,7 +3,7 @@ import 'dart:math' as math;
 /// Utilitários matemáticos para operações com vetores de embeddings (ex: 768 dimensões).
 class VectorMath {
   /// Converte com segurança dados de embedding vindos do Supabase/PostgREST.
-  /// Suporta tanto List<dynamic> quanto String no formato pgvector (ex: "[0.12, -0.34, ...]").
+  /// Suporta tanto `List<dynamic>` quanto String no formato pgvector (ex: "[0.12, -0.34, ...]").
   static List<double>? parseEmbedding(dynamic raw) {
     if (raw == null) return null;
     if (raw is List) {

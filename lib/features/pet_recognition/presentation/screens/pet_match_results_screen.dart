@@ -15,8 +15,13 @@ import '../widgets/similarity_badge.dart';
 /// Tela de exibição das possíveis correspondências visuais e cadastrais de um pet.
 class PetMatchResultsScreen extends ConsumerStatefulWidget {
   final String petId;
+  final String? initialHighlightPetId;
 
-  const PetMatchResultsScreen({super.key, required this.petId});
+  const PetMatchResultsScreen({
+    super.key,
+    required this.petId,
+    this.initialHighlightPetId,
+  });
 
   @override
   ConsumerState<PetMatchResultsScreen> createState() =>
@@ -125,17 +130,45 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
 
                   if (matchState.matches.isEmpty)
                     _buildEmptyState()
-                  else
+                  else ...[
+                    if (widget.initialHighlightPetId != null &&
+                        matchState.matches.any((m) => m.matchedPet.id == widget.initialHighlightPetId))
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.purple.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.stars, color: Colors.purple.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Exibindo em destaque a correspondência que gerou a notificação.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.purple,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ListView.separated(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: matchState.matches.length,
+                      itemCount: _getSortedMatches(matchState.matches).length,
                       separatorBuilder: (context, index) => const SizedBox(height: 16),
                       itemBuilder: (context, index) {
-                        final candidate = matchState.matches[index];
+                        final candidate = _getSortedMatches(matchState.matches)[index];
                         return _buildMatchCandidateCard(candidate);
                       },
                     ),
+                  ],
                 ],
               ),
             ),
@@ -300,18 +333,129 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
     );
   }
 
+  List<PetMatchCandidateEntity> _getSortedMatches(List<PetMatchCandidateEntity> matches) {
+    if (widget.initialHighlightPetId == null || widget.initialHighlightPetId!.isEmpty) {
+      return matches;
+    }
+    final highlighted = matches.where((m) => m.matchedPet.id == widget.initialHighlightPetId).toList();
+    final others = matches.where((m) => m.matchedPet.id != widget.initialHighlightPetId).toList();
+    return [...highlighted, ...others];
+  }
+
+  void _showManualComparisonDialog(PetMatchCandidateEntity candidate) {
+    final lost = _targetPet;
+    final found = candidate.matchedPet;
+    final scorePct = (candidate.similarityScore * 100).toStringAsFixed(1);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.compare, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('Comparação Visual', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Similaridade calculada por IA: $scorePct%',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Text('Pet Perdido', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: lost?.imageUrl != null
+                              ? Image.network(lost!.imageUrl!, height: 110, width: double.infinity, fit: BoxFit.cover)
+                              : Container(height: 110, color: Colors.grey.shade200, child: const Icon(Icons.pets)),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(lost?.petName ?? 'Seu Pet', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Text('Pet Encontrado', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: found.imageUrl != null
+                              ? Image.network(found.imageUrl!, height: 110, width: double.infinity, fit: BoxFit.cover)
+                              : Container(height: 110, color: Colors.grey.shade200, child: const Icon(Icons.pets)),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(found.petName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Local de avistamento: ${found.lastLocation}',
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Fechar'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.chat, size: 14),
+            label: const Text('Contatar'),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _contactTutor(found.contact);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMatchCandidateCard(PetMatchCandidateEntity candidate) {
     final pet = candidate.matchedPet;
+    final isHighlighted = widget.initialHighlightPetId != null &&
+        widget.initialHighlightPetId == pet.id;
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(
+          color: isHighlighted ? Colors.purple.shade600 : Colors.grey.shade300,
+          width: isHighlighted ? 2.0 : 1.0,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
+            color: isHighlighted
+                ? Colors.purple.withValues(alpha: 0.12)
+                : Colors.black.withValues(alpha: 0.04),
+            blurRadius: isHighlighted ? 10 : 6,
             offset: const Offset(0, 3),
           ),
         ],
@@ -319,11 +463,37 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isHighlighted)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade700,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+                  SizedBox(width: 8),
+                  Text(
+                    'Correspondência desta notificação',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Imagem do pet candidato com badge de similaridade
           Stack(
             children: [
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(isHighlighted ? 0 : 13),
+                ),
                 child: pet.imageUrl != null
                     ? Image.network(
                         pet.imageUrl!,
@@ -385,7 +555,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                     Expanded(
                       child: ElevatedButton.icon(
                         icon: const Icon(Icons.chat, size: 16),
-                        label: const Text('Contatar Tutor'),
+                        label: const Text('Contatar'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green.shade700,
                           foregroundColor: Colors.white,
@@ -394,13 +564,24 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                         onPressed: () => _contactTutor(pet.contact),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     OutlinedButton.icon(
-                      icon: const Icon(Icons.person, size: 16),
-                      label: const Text('Ver Perfil'),
+                      icon: const Icon(Icons.compare_arrows, size: 16),
+                      label: const Text('Comparar'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
+                      onPressed: () => _showManualComparisonDialog(candidate),
+                    ),
+                    const SizedBox(width: 6),
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
                       onPressed: () {
                         context.push(AppRoutes.publicProfile(pet.userId));
                       },
+                      child: const Icon(Icons.person, size: 16),
                     ),
                   ],
                 ),

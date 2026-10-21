@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/logger/app_logger.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../domain/models/notification_entity.dart';
+import '../../domain/models/notification_type.dart';
 
 final supabaseNotificationServiceProvider =
     Provider<SupabaseNotificationService>((ref) {
@@ -134,9 +135,28 @@ class SupabaseNotificationService {
 
   /// Método auxiliar para criar notificação (usado em simulações/testes locais)
   Future<void> createNotification(NotificationEntity notification) async {
+    // 1. Atualização com deduplicação no cache em memória
+    final existingIndex = _inMemoryNotifications.indexWhere(
+      (n) =>
+          n.id == notification.id ||
+          (n.type == NotificationType.matchFound &&
+              notification.type == NotificationType.matchFound &&
+              n.userId == notification.userId &&
+              n.relatedPetId == notification.relatedPetId &&
+              n.relatedMatchId == notification.relatedMatchId),
+    );
+
+    if (existingIndex != -1) {
+      _logger.i('Notificação de match já existente em cache. Ignorando duplicata.');
+      return;
+    }
+
     _inMemoryNotifications.add(notification);
     try {
-      await _supabase.from('notifications').insert(notification.toJson());
+      await _supabase.from('notifications').upsert(
+            notification.toJson(),
+            onConflict: 'id',
+          );
     } catch (e, st) {
       _logger.w('Erro ao inserir notificação no Supabase.', error: e, stackTrace: st);
     }

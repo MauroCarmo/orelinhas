@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+
+import '../../../../core/env/env.dart';
 import '../../../../core/logger/app_logger.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart';
@@ -14,7 +17,7 @@ import '../../domain/utils/vector_math.dart';
 final aiVisionServiceProvider = Provider<AiVisionService>((ref) {
   final supabase = ref.watch(supabaseClientProvider);
   final accessToken = supabase.auth.currentSession?.accessToken;
-  return AiVisionService(authToken: accessToken);
+  return AiVisionService(authToken: accessToken, apiEndpoint: Env.aiVisionEndpoint);
 });
 
 /// Resultado da execução do pipeline de IA para uma imagem.
@@ -43,16 +46,19 @@ class AiVisionService {
   final String? _apiEndpoint;
   final String? _authToken;
   final Duration _timeout;
+  final bool _allowSimulationForTesting;
 
   AiVisionService({
     http.Client? httpClient,
     String? apiEndpoint,
     String? authToken,
     Duration timeout = const Duration(seconds: 15),
+    bool allowSimulationForTesting = false,
   })  : _httpClient = httpClient ?? http.Client(),
         _apiEndpoint = apiEndpoint,
         _authToken = authToken,
-        _timeout = timeout;
+        _timeout = timeout,
+        _allowSimulationForTesting = allowSimulationForTesting;
 
   /// Analisa uma imagem de pet através do pipeline:
   /// 1. Verificação de elegibilidade da espécie (somente cães e gatos).
@@ -96,12 +102,23 @@ class AiVisionService {
         );
       }
 
-      // 3. Pipeline determinístico padrão (para ambiente local / offline / testes)
-      return await _simulateRobustAiPipeline(
-        imageUrl: imageUrl,
-        imageBytes: imageBytes,
-        petType: petType,
-        selectedBox: userSelectedBox,
+      // 3. Simulação permitida EXCLUSIVAMENTE em testes unitários isolados
+      if (_allowSimulationForTesting) {
+        _logger.w('Executando simulador local de teste isolado (allowSimulationForTesting=true).');
+        return await _simulateRobustAiPipeline(
+          imageUrl: imageUrl,
+          imageBytes: imageBytes,
+          petType: petType,
+          selectedBox: userSelectedBox,
+        );
+      }
+
+      // 4. Fluxo normal: quando AI_VISION_ENDPOINT estiver ausente ou vazio,
+      // retorna erro explícito de configuração sem gerar dados simulados.
+      _logger.e('AI_VISION_ENDPOINT não configurado no .env. Simulação bloqueada para produção.');
+      return const VisionAnalysisResult(
+        status: AnalysisStatus.error,
+        errorMessage: 'Serviço de reconhecimento de IA não configurado (AI_VISION_ENDPOINT ausente).',
       );
     } on TimeoutException catch (e, st) {
       _logger.w('Timeout na análise de visão computacional.', error: e, stackTrace: st);

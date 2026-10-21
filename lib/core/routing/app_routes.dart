@@ -22,8 +22,11 @@ class AppRoutes {
   static String petAdoptionEdit(String id) => '/pet-adoption/edit/$id';
   // Rota para perfil público, com ID do usuário
   static String publicProfile(String userId) => '/public-profile/$userId';
-  // Rota para correspondências de reconhecimento visual de pets
-  static String petMatches(String id) => '/pet-matches/$id';
+  // Rota para correspondências de reconhecimento visual de pets (suporta foco no pet encontrado)
+  static String petMatches(String id, {String? targetFoundPetId}) =>
+      targetFoundPetId != null && targetFoundPetId.isNotEmpty
+          ? '/pet-matches/$id?foundId=$targetFoundPetId'
+          : '/pet-matches/$id';
   // Rota para central de notificações
   static const String notifications = '/notifications';
 }

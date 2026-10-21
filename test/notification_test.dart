@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:orelinhas/core/routing/app_routes.dart';
 import 'package:orelinhas/features/notification/domain/models/notification_entity.dart';
 import 'package:orelinhas/features/notification/domain/models/notification_type.dart';
 import 'package:orelinhas/features/notification/data/services/supabase_notification_service.dart';
@@ -76,9 +77,9 @@ void main() {
   });
 
   // =========================================================================
-  // GRUPO 2: REPOSITÓRIO E SERVIÇO DE NOTIFICAÇÕES
+  // GRUPO 2: REPOSITÓRIO E SERVIÇO DE NOTIFICAÇÕES (CICLO DE VIDA E IDEMPOTÊNCIA)
   // =========================================================================
-  group('NotificationRepository - Lifecycle & Match Flow', () {
+  group('NotificationRepository - Lifecycle, Idempotence & Match Flow', () {
     late SupabaseNotificationService service;
     late NotificationRepository repository;
 
@@ -107,6 +108,57 @@ void main() {
       expect(notif.isRead, isFalse);
       expect(notif.body, contains('Thor'));
       expect(notif.body, contains('Praça da Árvore'));
+    });
+
+    test('Idempotência: o mesmo evento de match não cria notificações duplicadas', () async {
+      // 1ª chamada
+      await repository.notifyMatchFound(
+        recipientUserId: 'user-idemp',
+        lostPetName: 'Thor',
+        foundLocation: 'Centro',
+        lostPetId: 'lost-1',
+        foundPetId: 'found-1',
+        similarityScore: 0.95,
+      );
+
+      // 2ª chamada idêntica (ex: reprocessamento de match ou retry)
+      await repository.notifyMatchFound(
+        recipientUserId: 'user-idemp',
+        lostPetName: 'Thor',
+        foundLocation: 'Centro',
+        lostPetId: 'lost-1',
+        foundPetId: 'found-1',
+        similarityScore: 0.95,
+      );
+
+      final notifications = await repository.getUserNotifications('user-idemp');
+      expect(notifications, hasLength(1), reason: 'Não deve duplicar notificação para o mesmo evento de match');
+    });
+
+    test('Legitimidade: dois pets encontrados distintos geram duas notificações legítimas para o mesmo pet perdido', () async {
+      // Pet encontrado A
+      await repository.notifyMatchFound(
+        recipientUserId: 'user-legit',
+        lostPetName: 'Rex',
+        foundLocation: 'Bairro A',
+        lostPetId: 'lost-rex',
+        foundPetId: 'found-alpha',
+        similarityScore: 0.91,
+      );
+
+      // Pet encontrado B (outro animal encontrado)
+      await repository.notifyMatchFound(
+        recipientUserId: 'user-legit',
+        lostPetName: 'Rex',
+        foundLocation: 'Bairro B',
+        lostPetId: 'lost-rex',
+        foundPetId: 'found-beta',
+        similarityScore: 0.84,
+      );
+
+      final notifications = await repository.getUserNotifications('user-legit');
+      expect(notifications, hasLength(2), reason: 'Dois pets encontrados distintos devem gerar notificações independentes');
+      expect(notifications.map((n) => n.relatedMatchId).toSet(), equals({'found-alpha', 'found-beta'}));
     });
 
     test('Deve marcar notificação individual como lida', () async {
@@ -153,6 +205,60 @@ void main() {
 
       final listAfter = await repository.getUserNotifications('user-300');
       expect(listAfter.every((n) => n.isRead), isTrue);
+    });
+
+    test('Demais categorias de notificação (petStatusUpdate e system) funcionam normalmente', () async {
+      final notifStatus = NotificationEntity(
+        id: 'notif-status-1',
+        userId: 'user-mixed',
+        type: NotificationType.petStatusUpdate,
+        title: 'Pet Encontrado!',
+        body: 'Seu alerta foi atualizado.',
+        createdAt: DateTime.now(),
+        relatedPetId: 'lost-xyz',
+      );
+
+      final notifSystem = NotificationEntity(
+        id: 'notif-system-1',
+        userId: 'user-mixed',
+        type: NotificationType.system,
+        title: 'Manutenção programada',
+        body: 'O sistema passará por manutenção.',
+        createdAt: DateTime.now(),
+      );
+
+      await service.createNotification(notifStatus);
+      await service.createNotification(notifSystem);
+
+      final list = await repository.getUserNotifications('user-mixed');
+      expect(list, hasLength(2));
+      expect(list.any((n) => n.type == NotificationType.petStatusUpdate), isTrue);
+      expect(list.any((n) => n.type == NotificationType.system), isTrue);
+    });
+  });
+
+  // =========================================================================
+  // GRUPO 3: NAVEGAÇÃO E PRESERVAÇÃO DE IDENTIFICADORES
+  // =========================================================================
+  group('AppRoutes & Navigation - Preservação de Identificadores', () {
+    test('AppRoutes.petMatches deve incluir parâmetro query foundId quando fornecido', () {
+      final routeWithFocus = AppRoutes.petMatches('lost-123', targetFoundPetId: 'found-456');
+      expect(routeWithFocus, equals('/pet-matches/lost-123?foundId=found-456'));
+    });
+
+    test('AppRoutes.petMatches sem targetFoundPetId deve manter formato original', () {
+      final standardRoute = AppRoutes.petMatches('lost-123');
+      expect(standardRoute, equals('/pet-matches/lost-123'));
+    });
+
+    test('AppRoutes.petMatches com targetFoundPetId vazio deve manter formato original', () {
+      final standardRoute = AppRoutes.petMatches('lost-123', targetFoundPetId: '');
+      expect(standardRoute, equals('/pet-matches/lost-123'));
+    });
+
+    test('AppRoutes.petFoundEdit deve formatar rota correta para fallback quando relatedPetId estiver ausente', () {
+      final fallbackRoute = AppRoutes.petFoundEdit('found-789');
+      expect(fallbackRoute, equals('/pet-found/edit/found-789'));
     });
   });
 }

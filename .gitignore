@@ -44,5 +44,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Generated files
+ai_backend/venv/
+ai_backend/yolov8n.pt
+
 # Environment variables
 .env
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/

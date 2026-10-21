@@ -171,6 +171,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
+        if (!mounted) return;
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageFileName = image.name;
@@ -178,6 +179,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Erro ao selecionar imagem.'),
@@ -212,11 +214,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
       return url;
     } on ValidationException catch (e) {
+      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message), backgroundColor: Colors.red),
       );
       return null;
     } catch (e) {
+      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Falha ao enviar imagem.'),
@@ -231,6 +235,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_formKey.currentState!.validate()) {
       // Upload do avatar antes de salvar
       final avatarUrl = await _uploadAvatarIfNeeded();
+      if (!mounted) return;
       if (_selectedImageBytes != null && avatarUrl == null) {
         // Falha no upload, não prossegue
         return;
@@ -652,7 +657,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   Container(
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: AppColors.error.withOpacity(0.3),
+                        color: AppColors.error.withAlpha(77),
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),

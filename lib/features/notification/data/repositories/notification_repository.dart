@@ -54,8 +54,9 @@ class NotificationRepository {
     });
 
     final percentage = (similarityScore * 100).toStringAsFixed(1);
+    final deterministicId = 'notif_match_${recipientUserId}_${lostPetId}_$foundPetId';
     final notification = NotificationEntity(
-      id: 'notif_${DateTime.now().millisecondsSinceEpoch}',
+      id: deterministicId,
       userId: recipientUserId,
       type: NotificationType.matchFound,
       title: 'Possível correspondência encontrada! ($percentage%)',

@@ -117,6 +117,7 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
+        if (!mounted) return;
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageFileName = image.name;
@@ -124,6 +125,7 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
         });
       }
     } catch (e) {
+      if (!mounted) return;
       _showErrorDialog(context, ['Erro ao selecionar imagem.']);
     }
   }
@@ -151,9 +153,11 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
       );
       return url;
     } on ValidationException catch (e) {
+      if (!mounted) return null;
       _showErrorDialog(context, [e.message]);
       return null;
     } catch (e) {
+      if (!mounted) return null;
       _showErrorDialog(context, ['Falha ao enviar imagem. Tente novamente.']);
       return null;
     }
@@ -179,6 +183,7 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
     }
 
     final imageUrl = await _uploadImageIfNeeded();
+    if (!mounted) return;
     if (imageUrl == null) {
       return;
     }
@@ -288,7 +293,7 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<PetType>(
-                      value: _selectedSpecies,
+                      initialValue: _selectedSpecies,
                       decoration: const InputDecoration(
                         labelText: 'Espécie *',
                         border: OutlineInputBorder(),

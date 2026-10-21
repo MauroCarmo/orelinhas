@@ -9,6 +9,9 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/formatters/phone_input_formatter.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
+import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../controllers/pet_lost_controller.dart';
 import '../../domain/pet_lost_entity.dart';
@@ -37,14 +40,12 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
   DateTime _selectedDate = DateTime.now();
   bool _controllersInitialized = false;
 
-  // Coordenadas selecionadas no mapa
   LatLng? _selectedLocation;
   final MapController _mapController = MapController();
 
-  // Imagem (compatível com mobile e web)
   Uint8List? _selectedImageBytes;
-  String? _selectedImageFileName; // Nome original do arquivo
-  String? _existingImageUrl; // URL carregada ao editar
+  String? _selectedImageFileName;
+  String? _existingImageUrl;
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -117,6 +118,18 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: AppColors.accent,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && picked != _selectedDate) {
       setState(() {
@@ -129,11 +142,12 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Row(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
-            SizedBox(width: 8),
-            Text('Erros de Validação'),
+            const Icon(Icons.warning_amber_rounded, color: AppColors.error),
+            const SizedBox(width: 8),
+            Text('Erros de Validação', style: AppTextStyles.heading3()),
           ],
         ),
         content: SingleChildScrollView(
@@ -147,11 +161,8 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '• ',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Expanded(child: Text(err)),
+                        const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Expanded(child: Text(err, style: AppTextStyles.body())),
                       ],
                     ),
                   ),
@@ -160,7 +171,8 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
           ),
         ),
         actions: [
-          TextButton(
+          ElevatedButton(
+            style: AppButtonStyles.primary(),
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Entendido'),
           ),
@@ -172,8 +184,10 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
   Future<void> _useCurrentLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
+      if (!mounted) return;
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
+        if (!mounted) return;
         if (permission == LocationPermission.denied) {
           _showErrorDialog(context, [
             'Permissão de localização negada. Você pode definir a localização manualmente no mapa.',
@@ -195,11 +209,13 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
         ),
       );
 
+      if (!mounted) return;
       setState(() {
         _selectedLocation = LatLng(position.latitude, position.longitude);
         _mapController.move(_selectedLocation!, 15.0);
       });
     } catch (e) {
+      if (!mounted) return;
       _showErrorDialog(context, [
         'Não foi possível obter a localização atual.',
       ]);
@@ -214,26 +230,26 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
+        if (!mounted) return;
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageFileName = image.name;
-          _existingImageUrl = null; // substitui URL existente
+          _existingImageUrl = null;
         });
       }
     } catch (e) {
+      if (!mounted) return;
       _showErrorDialog(context, ['Erro ao selecionar imagem.']);
     }
   }
 
   Future<String?> _uploadImageIfNeeded() async {
-    // Se já havia uma URL e não foi selecionada nova imagem, mantém a URL (edição)
     if (_selectedImageBytes == null &&
         _existingImageUrl != null &&
         _existingImageUrl!.isNotEmpty) {
       return _existingImageUrl;
     }
 
-    // Se não há imagem selecionada e nem URL existente, retorna null (imagem obrigatória será tratada depois)
     if (_selectedImageBytes == null) {
       return null;
     }
@@ -250,9 +266,11 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       );
       return url;
     } on ValidationException catch (e) {
+      if (!mounted) return null;
       _showErrorDialog(context, [e.message]);
       return null;
     } catch (e) {
+      if (!mounted) return null;
       _showErrorDialog(context, ['Falha ao enviar imagem. Tente novamente.']);
       return null;
     }
@@ -264,23 +282,21 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Usuário não autenticado.'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         ),
       );
       return;
     }
 
-    // Validação prévia: imagem obrigatória
     if (_selectedImageBytes == null &&
         (_existingImageUrl == null || _existingImageUrl!.isEmpty)) {
       _showErrorDialog(context, ['A foto do pet é obrigatória.']);
       return;
     }
 
-    // Upload da imagem (se necessário)
     final imageUrl = await _uploadImageIfNeeded();
+    if (!mounted) return;
     if (imageUrl == null) {
-      // Se havia imagem selecionada mas o upload falhou, já mostramos erro.
       return;
     }
 
@@ -329,7 +345,7 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                     ? 'Alerta atualizado com sucesso!'
                     : 'Alerta registrado com sucesso!',
               ),
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.success,
             ),
           );
           context.pop();
@@ -339,7 +355,7 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
               ? err.message
               : 'Erro ao salvar alerta.';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
+            SnackBar(content: Text(errMsg), backgroundColor: AppColors.error),
           );
         }
       },
@@ -360,13 +376,18 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     final isLoading = controllerState.isLoading;
 
     return Scaffold(
+      backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
         title: Text(
           widget.alertId != null ? 'Editar Alerta' : 'Novo Alerta de Pet',
+          style: AppTextStyles.heading2(color: Colors.white),
         ),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
       ),
       body: isLoading && !_controllersInitialized && widget.alertId != null
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Form(
@@ -374,253 +395,279 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'Informações do Pet',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nome do Pet *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.pets),
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<PetType>(
-                      initialValue: _selectedType,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo do Pet *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: PetType.dog,
-                          child: Text('Cachorro'),
-                        ),
-                        DropdownMenuItem(
-                          value: PetType.cat,
-                          child: Text('Gato'),
-                        ),
-                        DropdownMenuItem(
-                          value: PetType.other,
-                          child: Text('Outro'),
-                        ),
-                      ],
-                      onChanged: isLoading
-                          ? null
-                          : (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedType = val;
-                                });
-                              }
-                            },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _breedController,
-                      decoration: const InputDecoration(
-                        labelText: 'Raça (Opcional)',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.pets),
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _ageController,
-                      decoration: const InputDecoration(
-                        labelText: 'Idade (Opcional)',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.hourglass_empty),
-                        helperText: 'Ex: 2 anos, 6 meses',
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    const Divider(),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Detalhes do Desaparecimento',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Descrição do ocorrido *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.description),
-                        helperText: 'Mínimo de 10 caracteres, máximo 255.',
-                      ),
-                      maxLines: 3,
-                      maxLength: 255,
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _lastLocationController,
-                      decoration: const InputDecoration(
-                        labelText: 'Último local visto *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.location_on),
-                        helperText: 'Ex: Próximo à praça central, Bairro X',
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    InkWell(
-                      onTap: isLoading ? null : () => _selectDate(context),
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Data do Desaparecimento *',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.calendar_month),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(_formatDate(_selectedDate)),
-                            const Icon(Icons.arrow_drop_down),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _contactController,
-                      decoration: const InputDecoration(
-                        labelText: 'Telefone de Contato *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.phone),
-                        helperText: 'Ex: (11) 99999-9999',
-                      ),
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [PhoneInputFormatter()],
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Seção de imagem (obrigatória)
-                    const Text(
-                      'Foto do Pet *',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildImagePicker(isLoading),
-                    const SizedBox(height: 16),
-
-                    // Localização no mapa
-                    const Text(
-                      'Localização Exata no Mapa',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.my_location),
-                      label: const Text('Usar minha localização atual'),
-                      onPressed: isLoading ? null : _useCurrentLocation,
-                    ),
-                    const SizedBox(height: 8),
+                    // --- Seção 1: Informações do Pet ---
                     Text(
-                      _selectedLocation == null
-                          ? 'Nenhuma localização selecionada.'
-                          : 'Selecionado: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
+                      'INFORMAÇÕES DO PET',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextFormField(
+                            controller: _nameController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Nome do Pet *',
+                              prefixIcon: const Icon(Icons.pets_outlined, size: 20),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<PetType>(
+                            initialValue: _selectedType,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Tipo do Pet *',
+                              prefixIcon: const Icon(Icons.category_outlined, size: 20),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: PetType.dog,
+                                child: Text('Cachorro'),
+                              ),
+                              DropdownMenuItem(
+                                value: PetType.cat,
+                                child: Text('Gato'),
+                              ),
+                              DropdownMenuItem(
+                                value: PetType.other,
+                                child: Text('Outro'),
+                              ),
+                            ],
+                            onChanged: isLoading
+                                ? null
+                                : (val) {
+                                    if (val != null) {
+                                      setState(() {
+                                        _selectedType = val;
+                                      });
+                                    }
+                                  },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _breedController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Raça (Opcional)',
+                              prefixIcon: const Icon(Icons.cruelty_free_outlined, size: 20),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _ageController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Idade (Opcional)',
+                              helperText: 'Ex: 2 anos, 6 meses',
+                              prefixIcon: const Icon(Icons.hourglass_empty_outlined, size: 20),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 300,
-                      child: FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter:
-                              _selectedLocation ??
-                              const LatLng(-23.5505, -46.6333),
-                          initialZoom: 15.0,
-                          onTap: (tapPosition, point) {
-                            setState(() {
-                              _selectedLocation = point;
-                            });
-                          },
-                        ),
+                    const SizedBox(height: 24),
+
+                    // --- Seção 2: Detalhes do Desaparecimento ---
+                    Text(
+                      'DETALHES DO DESAPARECIMENTO',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.example.app',
-                          ),
-                          if (_selectedLocation != null)
-                            MarkerLayer(
-                              markers: [
-                                Marker(
-                                  point: _selectedLocation!,
-                                  width: 40,
-                                  height: 40,
-                                  child: const Icon(
-                                    Icons.location_on,
-                                    color: Colors.red,
-                                    size: 40,
-                                  ),
-                                ),
-                              ],
+                          TextFormField(
+                            controller: _descriptionController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Descrição do ocorrido *',
+                              helperText: 'Mínimo de 10 caracteres, máximo 255.',
+                              prefixIcon: const Icon(Icons.notes_outlined, size: 20),
                             ),
+                            maxLines: 3,
+                            maxLength: 255,
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _lastLocationController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Último local visto *',
+                              helperText: 'Ex: Próximo à praça central, Bairro X',
+                              prefixIcon: const Icon(Icons.location_on_outlined, size: 20),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 16),
+                          InkWell(
+                            onTap: isLoading ? null : () => _selectDate(context),
+                            borderRadius: BorderRadius.circular(11),
+                            child: InputDecorator(
+                              decoration: AppInputDecoration.defaultDecoration(
+                                labelText: 'Data do Desaparecimento *',
+                                prefixIcon: const Icon(Icons.calendar_today_outlined, size: 20),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _formatDate(_selectedDate),
+                                    style: AppTextStyles.body(),
+                                  ),
+                                  const Icon(Icons.calendar_month, color: AppColors.primary, size: 20),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _contactController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Telefone de Contato *',
+                              helperText: 'Ex: (11) 99999-9999',
+                              prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            inputFormatters: [PhoneInputFormatter()],
+                            enabled: !isLoading,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // --- Seção 3: Foto do Pet ---
+                    Text(
+                      'FOTO DO PET *',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: _buildImagePicker(isLoading),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // --- Seção 4: Localização Exata no Mapa ---
+                    Text(
+                      'LOCALIZAÇÃO NO MAPA (OPCIONAL)',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          OutlinedButton.icon(
+                            style: AppButtonStyles.outlined(),
+                            icon: const Icon(Icons.my_location, size: 18),
+                            label: const Text('Usar minha localização atual'),
+                            onPressed: isLoading ? null : _useCurrentLocation,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            _selectedLocation == null
+                                ? 'Nenhuma coordenada fixada no mapa.'
+                                : 'Coordenadas: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
+                            style: AppTextStyles.bodySmall(
+                              color: _selectedLocation == null
+                                  ? AppColors.textSecondary
+                                  : AppColors.primary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: SizedBox(
+                              height: 260,
+                              child: FlutterMap(
+                                mapController: _mapController,
+                                options: MapOptions(
+                                  initialCenter: _selectedLocation ??
+                                      const LatLng(-23.5505, -46.6333),
+                                  initialZoom: 15.0,
+                                  onTap: (tapPosition, point) {
+                                    setState(() {
+                                      _selectedLocation = point;
+                                    });
+                                  },
+                                ),
+                                children: [
+                                  TileLayer(
+                                    urlTemplate:
+                                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                    userAgentPackageName: 'com.example.app',
+                                  ),
+                                  if (_selectedLocation != null)
+                                    MarkerLayer(
+                                      markers: [
+                                        Marker(
+                                          point: _selectedLocation!,
+                                          width: 40,
+                                          height: 40,
+                                          child: const Icon(
+                                            Icons.location_on,
+                                            color: AppColors.error,
+                                            size: 40,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 32),
 
+                    // --- Ações de Submissão ---
                     if (isLoading)
-                      const Center(child: CircularProgressIndicator())
+                      const Center(child: CircularProgressIndicator(color: AppColors.primary))
                     else ...[
                       ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: Colors.blue,
-                        ),
+                        style: AppButtonStyles.primary(),
                         onPressed: _submitForm,
                         child: Text(
                           widget.alertId != null
                               ? 'Salvar Alterações'
-                              : 'Criar Alerta',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
+                              : 'Cadastrar Alerta',
                         ),
                       ),
                       const SizedBox(height: 12),
                       OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
+                        style: AppButtonStyles.outlined(),
                         onPressed: () => context.pop(),
                         child: const Text('Cancelar'),
                       ),
                     ],
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -639,9 +686,9 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
           Container(
             height: 200,
             width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
+              border: Border.all(color: AppColors.border),
               borderRadius: BorderRadius.circular(12),
             ),
             child: ClipRRect(
@@ -652,7 +699,7 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       _existingImageUrl!,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) =>
-                          const Icon(Icons.broken_image),
+                          const Center(child: Icon(Icons.broken_image, size: 40, color: AppColors.textSecondary)),
                     ),
             ),
           )
@@ -660,35 +707,44 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
           Container(
             height: 120,
             width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
+              color: AppColors.scaffoldLight,
+              border: Border.all(color: AppColors.border),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Center(
-              child: Icon(Icons.add_a_photo, size: 48, color: Colors.grey),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.add_photo_alternate_outlined, size: 40, color: AppColors.textSecondary),
+                const SizedBox(height: 6),
+                Text('Nenhuma foto selecionada', style: AppTextStyles.bodySmall()),
+              ],
             ),
           ),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Câmera'),
-              onPressed: isLoading
-                  ? null
-                  : () => _pickImage(ImageSource.camera),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: AppButtonStyles.outlined(),
+                icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                label: const Text('Câmera'),
+                onPressed: isLoading ? null : () => _pickImage(ImageSource.camera),
+              ),
             ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.photo_library),
-              label: const Text('Galeria'),
-              onPressed: isLoading
-                  ? null
-                  : () => _pickImage(ImageSource.gallery),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: AppButtonStyles.outlined(),
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                label: const Text('Galeria'),
+                onPressed: isLoading ? null : () => _pickImage(ImageSource.gallery),
+              ),
             ),
           ],
         ),
-        if (hasPreview)
+        if (hasPreview) ...[
+          const SizedBox(height: 8),
           TextButton(
             onPressed: isLoading
                 ? null
@@ -699,8 +755,9 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
                       _existingImageUrl = null;
                     });
                   },
-            child: const Text('Remover imagem'),
+            child: Text('Remover foto', style: AppTextStyles.bodySmall(color: AppColors.error)),
           ),
+        ],
       ],
     );
   }

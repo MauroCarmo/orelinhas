@@ -4,7 +4,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../controllers/public_pet_found_controller.dart';
-import '../../domain/pet_found_entity.dart';
 
 class PetFoundMapScreen extends ConsumerWidget {
   const PetFoundMapScreen({super.key});

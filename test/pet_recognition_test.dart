@@ -123,7 +123,7 @@ void main() {
     late PetRecognitionRepository repository;
 
     setUp(() {
-      aiService = AiVisionService();
+      aiService = AiVisionService(allowSimulationForTesting: true);
       supabaseService = SupabasePetRecognitionService(FakeSupabaseClient());
       repository = PetRecognitionRepository(aiService, supabaseService);
     });
@@ -281,7 +281,7 @@ void main() {
     late PetRecognitionRepository repository;
 
     setUp(() {
-      aiService = AiVisionService();
+      aiService = AiVisionService(allowSimulationForTesting: true);
       supabaseService = SupabasePetRecognitionService(FakeSupabaseClient());
       repository = PetRecognitionRepository(aiService, supabaseService);
     });
