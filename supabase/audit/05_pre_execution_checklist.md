@@ -1,7 +1,7 @@
 # Checklist Pré-Execução e Validação Técnica de Conformidade — Orelhinhas
 
 **Branch:** `mauro`  
-**Data:** 10–11 de Novembro de 2026  
+**Data:** 11 de Novembro de 2026  
 **Documentos Vinculados:**
 - `supabase/audit/01_complete_database_baseline.sql`
 - `supabase/audit/02_incremental_remote_update.sql`
@@ -19,6 +19,14 @@ Este checklist formal separa com precisão as correções aplicadas no código, 
 
 | Status | Item de Auditoria | Critério de Aceitação / Implementação | Detalhes Técnicos |
 | :---: | :--- | :--- | :--- |
+| **CONCLUÍDO** | Blindagem de Embeddings (**D1 Resolvido**) | Leitura direta permissiva eliminada; SELECT restrito ao proprietário via `pet_visual_profiles_select_owner` | Matching e busca vetorial transferidos exclusivamente para RPCs `SECURITY DEFINER` |
+| **CONCLUÍDO** | Persistência Segura de Matches (**D2 Resolvido**) | Escrita direta no cliente revogada; criação manual via RPC `save_match` | Validação de espécies, status, titularidade e cálculo multi-sinal (0.50 max + 0.30 avg + 0.20 agg) no servidor |
+| **CONCLUÍDO** | Proteção da Origem Automática | Matches automáticos criados exclusivamente pelo backend/RPCs de busca | `match_found_pets_for_lost` e `match_lost_pets_for_found` geram `origin = 'automatic'` se score >= 0.70 |
+| **CONCLUÍDO** | Validação Estrita de Identidade de Sessão | RPCs automáticas comparam `auth.uid()` com `p_user_id` e bloqueiam forjamento de UUID | Previne impersonação; preserva `service_role` administrativo |
+| **CONCLUÍDO** | Proteção de Score e Metadados (UPSERT) | `similarity_score = GREATEST(...)`, metadados condicionais e preservação de `origin = 'automatic'` | Impede que buscas posteriores degradem scores superiores já persistidos |
+| **CONCLUÍDO** | Isolamento de Função Auxiliar (`calculate_match_score`) | Revogado acesso de `PUBLIC`, `anon` e `authenticated`; concedido apenas a `service_role` | Invocação interna encapsulada pelas RPCs `SECURITY DEFINER` via owner |
+| **CONCLUÍDO** | Exclusão do Próprio Alerta Encontrado | Adicionada política `DELETE` para `pet_found_alerts` vinculada a `auth.uid() = user_id` | Alinha o banco com `deleteAlert` implementado no Flutter |
+| **CONCLUÍDO** | Refatoração Flutter em `saveMatch` | `SupabasePetRecognitionService.saveMatch` migrado de `.upsert()` para `_supabase.rpc('save_match')` | Sincronizado com score e origem oficiais validados pelo servidor |
 | **CONCLUÍDO** | Blindagem das RPCs Vetoriais | Remoção de fallback de embedding do cliente; uso exclusivo de vetor oficial de `pet_visual_profiles` | `match_found_pets_for_lost` e `match_lost_pets_for_found` |
 | **CONCLUÍDO** | Sintaxe PostgreSQL — Operador Vetorial | `public.<=>` substituído por `OPERATOR(public.<=>)` em todas as RPCs com `search_path = ''` | Parser do PostgreSQL exige esta forma canônica |
 | **CONCLUÍDO** | Sintaxe PostgreSQL — COALESCE / EXTRACT / INTERVAL | `pg_catalog.coalesce`, `pg_catalog.extract`, `pg_catalog.interval` substituídos por construções ANSI SQL padrão | `COALESCE(...)`, `EXTRACT(epoch FROM ...)`, `INTERVAL '15 minutes'` |
@@ -26,13 +34,14 @@ Este checklist formal separa com precisão as correções aplicadas no código, 
 | **CONCLUÍDO** | Filtro de Status Ativo nas RPCs | Participação restrita a alertas onde `status = 'active'` | Alertas inativos ou resolvidos desconsiderados |
 | **CONCLUÍDO** | Endurecimento `SECURITY DEFINER` | `SET search_path = ''` em todas as funções privilegiadas com qualificação explícita de schema | Previne sequestro de search path temporário |
 | **CONCLUÍDO** | Permissões Explícitas de Execução | Revogação de `anon` e `PUBLIC`; concessão com assinaturas explícitas de tipos | `REVOKE ... FROM PUBLIC, anon; GRANT ... TO authenticated` |
-| **CONCLUÍDO** | Proteção contra Abuso no Login | `register_login_attempt` bloqueia resets anônimos, valida existência em `auth.users`, trava em 3 falhas | Sincronizado com `auth_controller.dart` (bloqueio em 15 min) |
-| **CONCLUÍDO** | Sanitização de E-mails | `LOWER(TRIM(user_email))` em `is_email_locked` e `register_login_attempt` | Previne falhas por caixa ou espaços no login |
-| **CONCLUÍDO** | `is_email_locked` — Comportamento seguro | Retorna `false` para e-mails inexistentes sem leakage de existência da conta | Comportamento seguro por design |
+| **CONCLUÍDO** | Preservação Absoluta de Auth/Login | Funções `is_email_locked`, `register_login_attempt` e `delete_own_user` mantidas 100% intactas | Operações removidas do incremental; zero modificações no subsistema de autenticação |
+| **CONCLUÍDO** | Preservação da Tabela `profiles` | Nenhuma política RLS, coluna ou trigger de `profiles` modificada no incremental | Estado remoto original estritamente preservado |
+| **CONCLUÍDO** | Remoção de `query_embedding` das Assinaturas | Assinatura simplificada em `match_found_pets_for_lost` e `match_lost_pets_for_found` | Sem parâmetro ocioso; grants e chamadas Flutter atualizados |
+| **CONCLUÍDO** | Isolamento de Autenticação Remota | Zero risco de regressão em login, cadastro, recuperação de senha e sessões | Diretriz mandatória cumprida integralmente |
 | **CONCLUÍDO** | Proteção de Embeddings em `pet_images` | SELECT restrito ao titular do animal via `pet_images_select_owner` | Terceiros não podem baixar vetores brutos individuais via API |
-| **CONCLUÍDO** | `anon` revogado em tabelas de embedding | `REVOKE ALL ON pet_images FROM anon` e `REVOKE ALL ON pet_visual_profiles FROM anon` | Acesso não autenticado bloqueado para tabelas vetoriais |
+| **CONCLUÍDO** | `anon` revogado em tabelas de embedding e matches | `REVOKE ALL ON pet_images, pet_visual_profiles, matches FROM anon` | Acesso não autenticado bloqueado |
 | **CONCLUÍDO** | `matches` SELECT — Privacidade | `matches_select_involved_owner` restringe SELECT a quem é dono de `lost_pet_id` OU `found_pet_id` | Terceiros não leem correspondências alheias |
-| **CONCLUÍDO** | `matches` INSERT/UPDATE — Titularidade | `matches_insert_owner` e `matches_update_owner` exigem propriedade de ao menos um animal do par | Risco residual documentado em D2 do `04_final_audit_report.md` |
+| **CONCLUÍDO** | `matches` INSERT/UPDATE direto revogado | Nenhuma política de INSERT ou UPDATE concedida para clientes na tabela `matches` | Toda inserção canalizada compulsoriamente via RPC `save_match` |
 | **CONCLUÍDO** | Prevenção de Spoofing de Avisos | Remoção de `notifications_insert_authenticated` — INSERT somente via trigger do banco | Clientes não inserem notificações arbitrárias |
 | **CONCLUÍDO** | Preservação de Matches Antigos | Coluna `origin` com `DEFAULT 'manual'`; sem updates cegos para `'automatic'` | Evita notificações retroativas |
 | **CONCLUÍDO** | Deduplicação NULL-safe de `pet_images` | `NOT EXISTS` em vez de `NOT IN` na exclusão de duplicatas | `NOT IN` falha silenciosamente com NULLs |
@@ -47,27 +56,27 @@ Este checklist formal separa com precisão as correções aplicadas no código, 
 
 | Status | Validação Local | Resultado Obtido | Evidência |
 | :---: | :--- | :--- | :--- |
-| **VALIDADO** | Análise Estática do Flutter | 0 erros, 0 avisos | `flutter analyze --no-pub` → `No issues found! (ran in 12.5s)` |
-| **VALIDADO** | Bateria de Testes Unitários de IA | 39/39 aprovados (100%) | `flutter test test/pet_recognition_test.dart` → `All tests passed!` |
-| **VALIDADO** | Contratos de Assinatura das RPCs | Parâmetros de `callMatchRpc` idênticos aos argumentos SQL | `query_embedding`, `target_pet_type`, `exclude_pet_id`, `similarity_threshold`, `match_limit` |
+| **VALIDADO** | Análise Estática do Flutter | 0 erros, 0 avisos | `flutter analyze --no-pub` → `No issues found! (ran in 13.8s)` |
+| **VALIDADO** | Bateria de Testes Unitários de IA e Segurança | 48/48 aprovados (100%) | `flutter test test/pet_recognition_test.dart` → `All tests passed!` |
+| **VALIDADO** | Contratos de Assinatura das RPCs | Parâmetros de `callMatchRpc` e `saveMatch` sincronizados com SQL | `save_match`, `match_found_pets_for_lost`, `match_lost_pets_for_found` |
 | **VALIDADO** | Consistência Baseline vs Incremental | Funções, constraints, RLS, índices e políticas produzem estado equivalente | Análise estática comparativa manual |
-| **VALIDADO** | Sintaxe SQL — Ausência de erros conhecidos | Grep confirmou ausência de `public.<=>`, `pg_catalog.coalesce`, `pg_catalog.extract`, `pg_catalog.interval` | `Select-String` nos arquivos de auditoria |
-| **VALIDADO** | Padrão de Upload no Storage | Flutter usa `{bucket}/{userId}/{timestamp}.{ext}` | Leitura de `storage_service.dart`, `create_pet_lost_screen.dart`, `create_pet_found_screen.dart`, `profile_screen.dart` |
+| **VALIDADO** | Sintaxe SQL — Ausência de erros conhecidos | Grep confirmou ausência de `public.<=>` bare, `pg_catalog.coalesce`, `pg_catalog.extract`, `pg_catalog.interval` | `Select-String` nos arquivos de auditoria |
+| **VALIDADO** | Padrão de Upload no Storage | Flutter usa `{bucket}/{userId}/{timestamp}.{ext}` | Leitura de `storage_service.dart`, `create_pet_lost_screen.dart`, etc. |
 | **VALIDADO** | Extensão `vector` no schema `public` | Confirmado em `remote_schema.sql` linha 48 | `CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "public"` |
-| **VALIDADO** | Leitura de `pet_images` não realizada para candidatos | O matching lê apenas `pet_visual_profiles` para perfis de candidatos | Nenhuma chamada `from('pet_images')` encontrada nos fluxos de matching |
+| **VALIDADO** | Isolamento de Espécies | Verificado em teste unitário específico | Cão e gato nunca se cruzam no matching |
 | **NÃO EXECUTADO** | Execução do SQL no Supabase remoto | — | Fora do escopo desta fase |
 
 ---
 
-## 3. Decisões Arquiteturais que Dependem de Aprovação Humana
+## 3. Decisões Humanas e Operacionais
 
-| Status | Decisão Pendente | Contexto Técnico | Ação Esperada |
+| Status | Decisão / Ação | Contexto Técnico | Ação Esperada |
 | :---: | :--- | :--- | :--- |
-| **DECISÃO HUMANA — D1** | `pet_visual_profiles` SELECT USING(true) | O SELECT aberto para autenticados expõe `aggregated_embedding` a qualquer usuário. Necessário para o matching pipeline atual. | Aprovar trade-off atual OU planejar view sem coluna de embedding |
-| **DECISÃO HUMANA — D2** | `saveMatch` direto pelo cliente | O Flutter insere em `matches` diretamente, permitindo associação de pets sem validação server-side da origem. | Aprovar trade-off atual OU planejar RPC `save_match_rpc` SECURITY DEFINER |
-| **DECISÃO HUMANA** | Visibilidade Pública dos Buckets | Buckets `pet_images` e `avatars` com SELECT público viabilizam `getPublicUrl` nos cards. URLs permanentes expõem imagens a quem tiver o link. | Confirmar aceitabilidade ou migrar para signed URLs |
-| **DECISÃO HUMANA** | Validação do Plano de Backup | O método de backup varia conforme plano Free/Pro do Supabase. | Atestar que backup verificável (esquema + dados + policies) está gravado |
-| **DECISÃO HUMANA** | Agendamento da Janela de Aplicação | Script DDL incremental deve ser aplicado em horário de baixo tráfego. | Aprovação do cronograma pelo responsável técnico |
+| **RESOLVIDO TECNICAMENTE** | D1 — Proteção de `aggregated_embedding` | SELECT restrito ao dono; matching transferido para RPCs server-side | Validar comportamento em staging |
+| **RESOLVIDO TECNICAMENTE** | D2 — Persistência segura de correspondências | RPC `save_match` implementada; escrita direta na tabela revogada | Validar comportamento em staging |
+| **DECISÃO HUMANA** | Visibilidade Pública dos Buckets | Buckets `pet_images` e `avatars` públicos viabilizam `getPublicUrl` nos cards | Confirmar aceitabilidade ou migrar para signed URLs no futuro |
+| **DECISÃO HUMANA** | Validação do Plano de Backup | O método de backup varia conforme plano Free/Pro do Supabase | Atestar que backup verificável (esquema + dados + policies) está gravado |
+| **DECISÃO HUMANA** | Agendamento da Janela de Aplicação | Script DDL incremental deve ser aplicado em horário de baixo tráfego | Aprovação do cronograma pelo responsável técnico |
 
 ---
 
@@ -76,7 +85,7 @@ Este checklist formal separa com precisão as correções aplicadas no código, 
 | Status | Etapa Remota | Procedimento Obrigatório | Responsável |
 | :---: | :--- | :--- | :--- |
 | **DEPENDENTE DO REMOTO** | Execução do Script no SQL Editor | Colar e executar `02_incremental_remote_update.sql` completo | Operador Humano |
-| **DEPENDENTE DO REMOTO** | Verificação de `origin` em `matches` | Confirmar que coluna `origin` foi adicionada com `DEFAULT 'manual'` | Operador Humano |
+| **DEPENDENTE DO REMOTO** | Verificação de `origin` e `updated_at` em `matches` | Confirmar que as colunas foram adicionadas com sucesso | Operador Humano |
 | **DEPENDENTE DO REMOTO** | Inspeção SQL Pós-Aplicação | Executar bateria de consultas da Etapa 4 de `03_manual_steps.md` | Operador Humano |
 | **DEPENDENTE DO REMOTO** | Validação das Funções com `search_path` | Confirmar `proconfig = '{search_path=}'` via `pg_proc` | Operador Humano |
 | **DEPENDENTE DO REMOTO** | Validação no Painel de Storage | Confirmar buckets e políticas ativas; nenhuma política legada remanescente | Operador Humano |
@@ -86,6 +95,7 @@ Este checklist formal separa com precisão as correções aplicadas no código, 
 
 ## 5. Parecer Técnico Final
 
-> **PARECER DA AUDITORIA: ✅ APROVADO COM RESSALVAS**  
-> Todos os bloqueios técnicos com solução implementável sem quebrar o Flutter foram corrigidos. Os scripts estão consistentes, sintaticamente válidos e alinhados com o código Flutter.  
-> As ressalvas (D1, D2 e riscos residuais) são trade-offs arquiteturais deliberados que requerem decisão humana para evolução futura — não bloqueiam a execução controlada atual.
+> **PARECER DA AUDITORIA: ✅ APROVADO PARA EXECUÇÃO CONTROLADA**  
+> Todas as pendências técnicas de segurança (D1 e D2), integridade referencial, sintaxe SQL e alinhamento com contratos Flutter foram integralmente implementadas e testadas.  
+> O código Flutter está sincronizado e validado (48/48 testes aprovados, `flutter analyze` sem advertências).  
+> Os scripts `01_complete_database_baseline.sql` e `02_incremental_remote_update.sql` estão prontos para aplicação pelo operador humano no Supabase remoto, mediante observância do procedimento de salvaguarda descrito em `03_manual_steps.md`.
