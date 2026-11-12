@@ -55,3 +55,9 @@ ai_backend/yolov8n.pt
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Dependências locais do Node.js
+node_modules/
+
+# Arquivos temporários do Supabase CLI
+supabase/.temp/
