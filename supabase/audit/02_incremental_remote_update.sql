@@ -23,11 +23,14 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 -- 2. TABELA matches (COLUNA origin, INTEGRIDADE E CHAVES ESTRANGEIRAS)
 -- ------------------------------------------------------------------------------
 
--- 2.1 Adicionar coluna origin com default 'manual'
+-- 2.1 Adicionar coluna origin com default 'manual' e updated_at
 -- NOTA TÉCNICA: Registros pré-existentes cuja origem não possa ser comprovada 
 -- permanecem estritamente como 'manual'. Não forçamos 'automatic' via script.
 ALTER TABLE public.matches 
 ADD COLUMN IF NOT EXISTS origin VARCHAR(20) NOT NULL DEFAULT 'manual';
+
+ALTER TABLE public.matches 
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
 -- 2.2 Remoção prévia de correspondências órfãs antes de criar Foreign Keys
 -- NOTA TÉCNICA: Usa NOT EXISTS em vez de NOT IN para tratar corretamente valores
@@ -110,156 +113,146 @@ USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
 -- ------------------------------------------------------------------------------
--- 5. FUNÇÕES DE AUTENTICAÇÃO (SECURITY DEFINER BLINDADAS COM search_path = '')
+-- 5. RPCs DE BUSCA VETORIAL BIDIRECIONAL COM DEFESA EM PROFUNDIDADE
 -- ------------------------------------------------------------------------------
 
--- 5.1 is_email_locked
-CREATE OR REPLACE FUNCTION public.is_email_locked(user_email text) 
-RETURNS jsonb
+-- Função interna auxiliar para cálculo estrito da fórmula oficial
+-- Ordem canônica invariante: primeiro argumento = lost_pet, segundo argumento = found_pet
+CREATE OR REPLACE FUNCTION public.calculate_match_score(
+    p_lost_pet_id uuid,
+    p_found_pet_id uuid
+)
+RETURNS TABLE (
+    score double precision,
+    individual_scores jsonb,
+    match_method text
+)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-    rec RECORD;
-    now_ts TIMESTAMP WITH TIME ZONE := pg_catalog.now();
-    rem_seconds INTEGER := 0;
-    v_clean_email TEXT;
+    v_lost_profile public.pet_visual_profiles%ROWTYPE;
+    v_found_profile public.pet_visual_profiles%ROWTYPE;
+    v_agg_similarity double precision := NULL;
+    v_pair_similarities double precision[] := ARRAY[]::double precision[];
+    v_max_sim double precision := 0.0;
+    v_avg_sim double precision := 0.0;
+    v_calculated_score double precision := 0.0;
+    v_lost_emb public.vector(768);
+    v_found_emb public.vector(768);
+    v_best_for_lost double precision;
+    v_sim double precision;
+    v_sum_pairs double precision := 0.0;
+    v_count_pairs integer := 0;
+    v_lost_has_images boolean := false;
+    v_found_has_images boolean := false;
 BEGIN
-    v_clean_email := pg_catalog.lower(pg_catalog.trim(user_email));
-    IF v_clean_email IS NULL OR v_clean_email = '' THEN
-        RETURN pg_catalog.jsonb_build_object('is_locked', false, 'remaining_seconds', 0, 'attempts_count', 0);
+    SELECT * INTO v_lost_profile FROM public.pet_visual_profiles WHERE pet_id = p_lost_pet_id;
+    SELECT * INTO v_found_profile FROM public.pet_visual_profiles WHERE pet_id = p_found_pet_id;
+
+    -- 1. Similaridade agregada (se ambos tiverem embedding agregado válido de 768d)
+    IF v_lost_profile.aggregated_embedding IS NOT NULL
+       AND v_found_profile.aggregated_embedding IS NOT NULL
+       AND public.vector_dims(v_lost_profile.aggregated_embedding) = 768
+       AND public.vector_dims(v_found_profile.aggregated_embedding) = 768
+    THEN
+        v_agg_similarity := 1.0 - (v_lost_profile.aggregated_embedding OPERATOR(public.<=>) v_found_profile.aggregated_embedding);
     END IF;
 
-    SELECT * INTO rec FROM public.login_attempts WHERE email = v_clean_email;
-    IF rec IS NULL THEN
-        RETURN pg_catalog.jsonb_build_object('is_locked', false, 'remaining_seconds', 0, 'attempts_count', 0);
-    END IF;
+    -- 2. Verifica se ambos os animais possuem pelo menos uma imagem com embedding válido de 768d
+    SELECT EXISTS (
+        SELECT 1 FROM public.pet_images
+        WHERE pet_id = p_lost_pet_id
+          AND embedding IS NOT NULL
+          AND public.vector_dims(embedding) = 768
+    ) INTO v_lost_has_images;
 
-    IF rec.locked_until IS NOT NULL AND rec.locked_until > now_ts THEN
-        rem_seconds := EXTRACT(epoch FROM (rec.locked_until - now_ts))::INTEGER;
-        RETURN pg_catalog.jsonb_build_object('is_locked', true, 'remaining_seconds', rem_seconds, 'attempts_count', rec.attempts_count);
-    END IF;
+    SELECT EXISTS (
+        SELECT 1 FROM public.pet_images
+        WHERE pet_id = p_found_pet_id
+          AND embedding IS NOT NULL
+          AND public.vector_dims(embedding) = 768
+    ) INTO v_found_has_images;
 
-    IF rec.locked_until IS NOT NULL AND rec.locked_until <= now_ts THEN
-        UPDATE public.login_attempts
-        SET attempts_count = 0, locked_until = NULL, last_attempt_at = now_ts
-        WHERE email = v_clean_email;
-        RETURN pg_catalog.jsonb_build_object('is_locked', false, 'remaining_seconds', 0, 'attempts_count', 0);
-    END IF;
+    -- 3. Cálculo multi-vetor: executado SOMENTE quando ambos possuem imagens individuais válidas
+    IF v_lost_has_images AND v_found_has_images THEN
+        FOR v_lost_emb IN
+            SELECT pi.embedding
+            FROM public.pet_images pi
+            WHERE pi.pet_id = p_lost_pet_id
+              AND pi.embedding IS NOT NULL
+              AND public.vector_dims(pi.embedding) = 768
+        LOOP
+            v_best_for_lost := 0.0;
+            FOR v_found_emb IN
+                SELECT pi2.embedding
+                FROM public.pet_images pi2
+                WHERE pi2.pet_id = p_found_pet_id
+                  AND pi2.embedding IS NOT NULL
+                  AND public.vector_dims(pi2.embedding) = 768
+            LOOP
+                v_sim := 1.0 - (v_lost_emb OPERATOR(public.<=>) v_found_emb);
+                IF v_sim > v_best_for_lost THEN
+                    v_best_for_lost := v_sim;
+                END IF;
+            END LOOP;
 
-    RETURN pg_catalog.jsonb_build_object('is_locked', false, 'remaining_seconds', 0, 'attempts_count', rec.attempts_count);
-END;
-$$;
-
--- 5.2 register_login_attempt
-CREATE OR REPLACE FUNCTION public.register_login_attempt(user_email text, is_success boolean) 
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-    rec RECORD;
-    new_count INTEGER;
-    lock_time TIMESTAMP WITH TIME ZONE := NULL;
-    now_ts TIMESTAMP WITH TIME ZONE := pg_catalog.now();
-    v_clean_email TEXT;
-    v_auth_email TEXT;
-BEGIN
-    v_clean_email := pg_catalog.lower(pg_catalog.trim(user_email));
-    IF v_clean_email IS NULL OR v_clean_email = '' THEN
-        RETURN pg_catalog.jsonb_build_object('error', 'E-mail inválido');
-    END IF;
-
-    -- Sucesso: apenas reseta se o usuário já estiver autenticado no Supabase Auth e o e-mail coincidir
-    IF is_success THEN
-        IF auth.uid() IS NOT NULL THEN
-            SELECT email INTO v_auth_email FROM auth.users WHERE id = auth.uid();
-            IF v_auth_email IS NOT NULL AND pg_catalog.lower(v_auth_email) = v_clean_email THEN
-                DELETE FROM public.login_attempts WHERE email = v_clean_email;
-                RETURN pg_catalog.jsonb_build_object('status', 'reset');
+            -- Registra a melhor similaridade (incluindo 0.0, espelhando VectorMath.computeDetailedMatchScore)
+            v_pair_similarities := array_append(v_pair_similarities, v_best_for_lost);
+            v_sum_pairs := v_sum_pairs + v_best_for_lost;
+            v_count_pairs := v_count_pairs + 1;
+            IF v_best_for_lost > v_max_sim THEN
+                v_max_sim := v_best_for_lost;
             END IF;
+        END LOOP;
+    END IF;
+
+    -- 4. Aplicação da fórmula oficial conforme disponibilidade de embeddings:
+    -- Cenário A: Ambos possuem imagens individuais válidas
+    IF v_count_pairs > 0 THEN
+        v_avg_sim := v_sum_pairs / v_count_pairs;
+        IF v_agg_similarity IS NOT NULL AND v_agg_similarity > 0.0 THEN
+            -- 50% max individual + 30% média + 20% agregado
+            v_calculated_score := (0.50 * v_max_sim + 0.30 * v_avg_sim + 0.20 * v_agg_similarity);
+        ELSE
+            -- Sem agregado válido: 60% max individual + 40% média
+            v_calculated_score := (0.60 * v_max_sim + 0.40 * v_avg_sim);
         END IF;
-        RETURN pg_catalog.jsonb_build_object('status', 'ignored');
-    END IF;
+        match_method := 'visual_multi_vector';
 
-    -- Falha: verifica se o e-mail existe em auth.users para evitar poluição da base com contas inexistentes
-    IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = v_clean_email) THEN
-        RETURN pg_catalog.jsonb_build_object('attempts_count', 0, 'is_locked', false);
-    END IF;
+    -- Cenário B: Não há pares individuais válidos, mas há similaridade agregada
+    ELSIF v_agg_similarity IS NOT NULL THEN
+        v_calculated_score := v_agg_similarity;
+        v_pair_similarities := ARRAY[v_agg_similarity];
+        match_method := 'visual_single_vector';
 
-    SELECT * INTO rec FROM public.login_attempts WHERE email = v_clean_email;
-    IF rec IS NULL THEN
-        INSERT INTO public.login_attempts (email, attempts_count, last_attempt_at)
-        VALUES (v_clean_email, 1, now_ts);
-        RETURN pg_catalog.jsonb_build_object('attempts_count', 1, 'is_locked', false);
-    END IF;
-
-    IF rec.locked_until IS NOT NULL AND rec.locked_until > now_ts THEN
-        RETURN pg_catalog.jsonb_build_object(
-            'attempts_count', rec.attempts_count,
-            'is_locked', true,
-            'remaining_seconds', EXTRACT(epoch FROM (rec.locked_until - now_ts))::INTEGER
-        );
-    END IF;
-
-    IF rec.locked_until IS NOT NULL AND rec.locked_until <= now_ts THEN
-        new_count := 1;
-        lock_time := NULL;
+    -- Cenário C: Nenhum embedding válido suficiente
     ELSE
-        new_count := rec.attempts_count + 1;
+        v_calculated_score := 0.0;
+        match_method := 'insufficient_embeddings';
     END IF;
 
-    -- Bloqueio após 3 tentativas falhas consecutivas (15 minutos)
-    IF new_count >= 3 THEN
-        lock_time := now_ts + INTERVAL '15 minutes';
-    END IF;
-
-    UPDATE public.login_attempts
-    SET attempts_count = new_count, locked_until = lock_time, last_attempt_at = now_ts
-    WHERE email = v_clean_email;
-
-    RETURN pg_catalog.jsonb_build_object(
-        'attempts_count', new_count,
-        'is_locked', (lock_time IS NOT NULL),
-        'remaining_seconds', CASE WHEN lock_time IS NOT NULL THEN EXTRACT(epoch FROM (lock_time - now_ts))::INTEGER ELSE 0 END
-    );
+    score := GREATEST(0.0, LEAST(1.0, v_calculated_score));
+    individual_scores := pg_catalog.to_jsonb(v_pair_similarities);
+    RETURN NEXT;
 END;
 $$;
 
--- 5.3 delete_own_user
-CREATE OR REPLACE FUNCTION public.delete_own_user()
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-    v_user_id UUID;
-BEGIN
-    v_user_id := auth.uid();
-    IF v_user_id IS NULL THEN
-        RAISE EXCEPTION 'Acesso negado: operação requer usuário autenticado.';
-    END IF;
+-- 5.1 match_found_pets_for_lost
+-- Ordem canônica: lost_pet = v_source_id, found_pet = pfa.id
+DROP FUNCTION IF EXISTS public.match_found_pets_for_lost(uuid, character varying, uuid, double precision, integer, public.vector);
+DROP FUNCTION IF EXISTS public.match_found_pets_for_lost(public.vector, character varying, uuid, double precision, integer);
+DROP FUNCTION IF EXISTS public.match_found_pets_for_lost(uuid, character varying, uuid, double precision, integer);
+DROP FUNCTION IF EXISTS public.match_found_pets_for_lost(uuid, character varying, uuid, double precision, integer, uuid);
 
-    DELETE FROM auth.users WHERE id = v_user_id;
-END;
-$$;
-
--- ------------------------------------------------------------------------------
--- 6. RPCs DE BUSCA VETORIAL BIDIRECIONAL COM DEFESA EM PROFUNDIDADE
--- ------------------------------------------------------------------------------
-
--- 6.1 match_found_pets_for_lost
--- Consome EXCLUSIVAMENTE o embedding oficial de pet_visual_profiles.
--- Sem fallback de vetores do cliente. Valida titularidade, espécie e status ativo.
 CREATE OR REPLACE FUNCTION public.match_found_pets_for_lost(
-    query_embedding public.vector(768) DEFAULT NULL,
+    p_source_pet_id uuid DEFAULT NULL,
     target_pet_type character varying DEFAULT NULL,
     exclude_pet_id uuid DEFAULT NULL,
     similarity_threshold double precision DEFAULT 0.70,
-    match_limit integer DEFAULT 20
+    match_limit integer DEFAULT 20,
+    p_user_id uuid DEFAULT NULL
 )
 RETURNS TABLE (
     pet_id uuid,
@@ -270,103 +263,174 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
+    v_session_user uuid;
+    v_session_role text;
     v_calling_user uuid;
+    v_source_id uuid;
     v_source_alert_pet_type character varying(50);
     v_source_alert_status text;
-    v_source_embedding public.vector(768);
-    v_source_profile_pet_type character varying(50);
     v_normalized_species character varying(50);
+    v_norm_threshold double precision;
+    v_norm_limit integer;
+    v_source_has_embeddings boolean := false;
 BEGIN
-    -- 1. Validar autenticação
-    v_calling_user := auth.uid();
-    IF v_calling_user IS NULL THEN
-        RAISE EXCEPTION 'Acesso negado: operação requer usuário autenticado.';
+    v_source_id := COALESCE(p_source_pet_id, exclude_pet_id);
+    IF v_source_id IS NULL THEN
+        RAISE EXCEPTION 'ID do animal de origem não pode ser nulo.' USING ERRCODE = 'P0002';
     END IF;
 
-    IF exclude_pet_id IS NULL THEN
-        RAISE EXCEPTION 'exclude_pet_id não pode ser nulo.';
+    -- 1. Validar autenticação e autorização de sessão
+    v_session_user := auth.uid();
+    v_session_role := auth.role();
+
+    IF v_session_role = 'service_role' THEN
+        IF p_user_id IS NOT NULL THEN
+            v_calling_user := p_user_id;
+        ELSE
+            SELECT pla.user_id INTO v_calling_user
+            FROM public.pet_lost_alerts pla
+            WHERE pla.id = v_source_id;
+        END IF;
+    ELSIF v_session_role = 'authenticated' OR v_session_user IS NOT NULL THEN
+        IF p_user_id IS NOT NULL AND p_user_id <> v_session_user THEN
+            RAISE EXCEPTION 'Acesso negado: p_user_id informado diverge do usuário autenticado.' USING ERRCODE = '42501';
+        END IF;
+        v_calling_user := v_session_user;
+    ELSE
+        RAISE EXCEPTION 'Acesso negado: operação requer usuário autenticado ou service_role.' USING ERRCODE = '42501';
+    END IF;
+
+    IF v_calling_user IS NULL THEN
+        RAISE EXCEPTION 'Não foi possível determinar o usuário autenticado.' USING ERRCODE = 'P0001';
     END IF;
 
     -- 2. Validar titularidade, existência e status ativo do animal de origem em pet_lost_alerts
     SELECT pla.pet_type, pla.status 
     INTO v_source_alert_pet_type, v_source_alert_status
     FROM public.pet_lost_alerts pla
-    WHERE pla.id = exclude_pet_id AND pla.user_id = v_calling_user;
+    WHERE pla.id = v_source_id AND pla.user_id = v_calling_user;
 
     IF v_source_alert_pet_type IS NULL THEN
-        RAISE EXCEPTION 'Animal de origem não encontrado ou não pertence ao usuário autenticado.';
+        RAISE EXCEPTION 'Animal de origem não encontrado ou não pertence ao usuário autenticado.' USING ERRCODE = 'P0003';
     END IF;
 
     IF v_source_alert_status <> 'active' THEN
-        RAISE EXCEPTION 'O alerta do animal de origem não está ativo.';
+        RAISE EXCEPTION 'O alerta do animal de origem não está ativo.' USING ERRCODE = 'P0004';
     END IF;
 
-    v_normalized_species := pg_catalog.lower(pg_catalog.trim(v_source_alert_pet_type));
+    v_normalized_species := pg_catalog.lower(pg_catalog.btrim(v_source_alert_pet_type));
 
-    -- Validar elegibilidade da espécie (somente cão e gato são elegíveis para IA visual)
     IF v_normalized_species NOT IN ('dog', 'cat') THEN
-        RAISE EXCEPTION 'Espécie do animal não é elegível para busca visual por IA.';
+        RAISE EXCEPTION 'Espécie do animal não é elegível para busca visual por IA.' USING ERRCODE = 'P0005';
     END IF;
 
-    -- Se target_pet_type foi informado, validar consistência
-    IF target_pet_type IS NOT NULL AND pg_catalog.lower(pg_catalog.trim(target_pet_type)) <> v_normalized_species THEN
-        RAISE EXCEPTION 'Espécie alvo incompatível com a espécie do animal de origem.';
+    IF target_pet_type IS NOT NULL AND pg_catalog.lower(pg_catalog.btrim(target_pet_type)) <> v_normalized_species THEN
+        RAISE EXCEPTION 'Espécie alvo incompatível com a espécie do animal de origem.' USING ERRCODE = 'P0006';
     END IF;
 
-    -- 3. Recuperar EXCLUSIVAMENTE o embedding oficial persistido em pet_visual_profiles
-    SELECT pvp.aggregated_embedding, pvp.pet_type 
-    INTO v_source_embedding, v_source_profile_pet_type
-    FROM public.pet_visual_profiles pvp
-    WHERE pvp.pet_id = exclude_pet_id;
+    -- 3. Validar se o animal de origem possui perfil visual com embeddings válidos (agregado OU individuais)
+    SELECT EXISTS (
+        SELECT 1 FROM public.pet_visual_profiles pvp
+        WHERE pvp.pet_id = v_source_id
+          AND pvp.aggregated_embedding IS NOT NULL
+          AND public.vector_dims(pvp.aggregated_embedding) = 768
+    ) OR EXISTS (
+        SELECT 1 FROM public.pet_images pi
+        WHERE pi.pet_id = v_source_id
+          AND pi.embedding IS NOT NULL
+          AND public.vector_dims(pi.embedding) = 768
+    ) INTO v_source_has_embeddings;
 
-    IF v_source_embedding IS NULL THEN
-        RAISE EXCEPTION 'Animal de origem não possui perfil visual com embedding oficial persistido.';
-    END IF;
-
-    IF public.vector_dims(v_source_embedding) <> 768 THEN
-        RAISE EXCEPTION 'Dimensão do embedding oficial inválida. Esperado vetor de 768 dimensões.';
-    END IF;
-
-    IF v_source_profile_pet_type IS NOT NULL AND pg_catalog.lower(pg_catalog.trim(v_source_profile_pet_type)) <> v_normalized_species THEN
-        RAISE EXCEPTION 'Inconsistência de espécie entre o alerta do animal e seu perfil visual.';
+    IF NOT v_source_has_embeddings THEN
+        RAISE EXCEPTION 'Animal de origem não possui embeddings visuais válidos de 768 dimensões.' USING ERRCODE = 'P0007';
     END IF;
 
     -- 4. Normalização defensiva de parâmetros de busca
-    IF similarity_threshold IS NULL OR similarity_threshold < 0.0 OR similarity_threshold > 1.0 THEN
-        similarity_threshold := 0.70;
+    -- Limiar fixo e inviolável no servidor: 0.70
+    v_norm_threshold := 0.70;
+
+    v_norm_limit := COALESCE(match_limit, 20);
+    IF v_norm_limit < 1 OR v_norm_limit > 100 THEN
+        v_norm_limit := 20;
     END IF;
 
-    IF match_limit IS NULL OR match_limit < 1 OR match_limit > 100 THEN
-        match_limit := 20;
-    END IF;
-
-    -- 5. Execução da busca vetorial aproximada (pgvector HNSW)
-    -- Valida espécie tanto no perfil visual quanto no alerta candidato (pfa.pet_type e pvp.pet_type)
-    -- Garante que somente candidatos ativos e elegíveis participem
+    -- 5 & 6. Persistência atômica via CTE sem tabelas temporárias
+    -- Ordem canônica de chamada: calculate_match_score(lost_pet_id, found_pet_id)
     RETURN QUERY
-    SELECT
-        pvp.pet_id,
-        (1 - (pvp.aggregated_embedding OPERATOR(public.<=>) v_source_embedding))::double precision AS similarity_score
-    FROM public.pet_visual_profiles pvp
-    INNER JOIN public.pet_found_alerts pfa ON pfa.id = pvp.pet_id
-    WHERE pg_catalog.lower(pg_catalog.trim(pvp.pet_type)) = v_normalized_species
-      AND pg_catalog.lower(pg_catalog.trim(pfa.pet_type)) = v_normalized_species
-      AND pfa.status = 'active'
-      AND pvp.pet_id <> exclude_pet_id
-      AND pvp.aggregated_embedding IS NOT NULL
-      AND (1 - (pvp.aggregated_embedding OPERATOR(public.<=>) v_source_embedding)) >= similarity_threshold
-    ORDER BY pvp.aggregated_embedding OPERATOR(public.<=>) v_source_embedding ASC
-    LIMIT match_limit;
+    WITH ranked AS (
+        SELECT
+            v_source_id AS lost_id,
+            pfa.id AS found_id,
+            ms.score AS calc_score,
+            ms.match_method AS calc_method,
+            ms.individual_scores AS calc_individual
+        FROM public.pet_found_alerts pfa
+        CROSS JOIN LATERAL public.calculate_match_score(v_source_id, pfa.id) ms
+        WHERE pg_catalog.lower(pg_catalog.btrim(pfa.pet_type)) = v_normalized_species
+          AND pfa.status = 'active'
+          AND pfa.id <> v_source_id
+          AND pfa.user_id <> v_calling_user
+          AND ms.score >= v_norm_threshold
+        ORDER BY ms.score DESC, pfa.id ASC
+        LIMIT v_norm_limit
+    ),
+    upserted AS (
+        INSERT INTO public.matches (
+            lost_pet_id,
+            found_pet_id,
+            similarity_score,
+            match_method,
+            status,
+            origin,
+            individual_scores,
+            created_at,
+            updated_at
+        )
+        SELECT
+            r.lost_id,
+            r.found_id,
+            r.calc_score,
+            r.calc_method,
+            'pending',
+            'automatic',
+            r.calc_individual,
+            NOW(),
+            NOW()
+        FROM ranked r
+        ON CONFLICT (lost_pet_id, found_pet_id) DO UPDATE SET
+            similarity_score = GREATEST(public.matches.similarity_score, EXCLUDED.similarity_score),
+            match_method = CASE
+                WHEN EXCLUDED.similarity_score >= public.matches.similarity_score THEN EXCLUDED.match_method
+                ELSE public.matches.match_method
+            END,
+            individual_scores = CASE
+                WHEN EXCLUDED.similarity_score >= public.matches.similarity_score THEN EXCLUDED.individual_scores
+                ELSE public.matches.individual_scores
+            END,
+            origin = 'automatic',
+            updated_at = NOW()
+        RETURNING matches.found_pet_id AS ret_pet_id, matches.similarity_score AS ret_score
+    )
+    SELECT u.ret_pet_id AS pet_id, u.ret_score AS similarity_score
+    FROM upserted u
+    ORDER BY u.ret_score DESC, u.ret_pet_id ASC;
 END;
 $$;
 
--- 6.2 match_lost_pets_for_found
+-- 5.2 match_lost_pets_for_found
+-- Ordem canônica: lost_pet = pla.id, found_pet = v_source_id
+DROP FUNCTION IF EXISTS public.match_lost_pets_for_found(uuid, character varying, uuid, double precision, integer, public.vector);
+DROP FUNCTION IF EXISTS public.match_lost_pets_for_found(public.vector, character varying, uuid, double precision, integer);
+DROP FUNCTION IF EXISTS public.match_lost_pets_for_found(uuid, character varying, uuid, double precision, integer);
+DROP FUNCTION IF EXISTS public.match_lost_pets_for_found(uuid, character varying, uuid, double precision, integer, uuid);
+
 CREATE OR REPLACE FUNCTION public.match_lost_pets_for_found(
-    query_embedding public.vector(768) DEFAULT NULL,
+    p_source_pet_id uuid DEFAULT NULL,
     target_pet_type character varying DEFAULT NULL,
     exclude_pet_id uuid DEFAULT NULL,
     similarity_threshold double precision DEFAULT 0.70,
-    match_limit integer DEFAULT 20
+    match_limit integer DEFAULT 20,
+    p_user_id uuid DEFAULT NULL
 )
 RETURNS TABLE (
     pet_id uuid,
@@ -377,96 +441,372 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
+    v_session_user uuid;
+    v_session_role text;
     v_calling_user uuid;
+    v_source_id uuid;
     v_source_alert_pet_type character varying(50);
     v_source_alert_status text;
-    v_source_embedding public.vector(768);
-    v_source_profile_pet_type character varying(50);
     v_normalized_species character varying(50);
+    v_norm_threshold double precision;
+    v_norm_limit integer;
+    v_source_has_embeddings boolean := false;
 BEGIN
-    -- 1. Validar autenticação
-    v_calling_user := auth.uid();
-    IF v_calling_user IS NULL THEN
-        RAISE EXCEPTION 'Acesso negado: operação requer usuário autenticado.';
+    v_source_id := COALESCE(p_source_pet_id, exclude_pet_id);
+    IF v_source_id IS NULL THEN
+        RAISE EXCEPTION 'ID do animal de origem não pode ser nulo.' USING ERRCODE = 'P0002';
     END IF;
 
-    IF exclude_pet_id IS NULL THEN
-        RAISE EXCEPTION 'exclude_pet_id não pode ser nulo.';
+    -- 1. Validar autenticação e autorização de sessão
+    v_session_user := auth.uid();
+    v_session_role := auth.role();
+
+    IF v_session_role = 'service_role' THEN
+        IF p_user_id IS NOT NULL THEN
+            v_calling_user := p_user_id;
+        ELSE
+            SELECT pfa.user_id INTO v_calling_user
+            FROM public.pet_found_alerts pfa
+            WHERE pfa.id = v_source_id;
+        END IF;
+    ELSIF v_session_role = 'authenticated' OR v_session_user IS NOT NULL THEN
+        IF p_user_id IS NOT NULL AND p_user_id <> v_session_user THEN
+            RAISE EXCEPTION 'Acesso negado: p_user_id informado diverge do usuário autenticado.' USING ERRCODE = '42501';
+        END IF;
+        v_calling_user := v_session_user;
+    ELSE
+        RAISE EXCEPTION 'Acesso negado: operação requer usuário autenticado ou service_role.' USING ERRCODE = '42501';
+    END IF;
+
+    IF v_calling_user IS NULL THEN
+        RAISE EXCEPTION 'Não foi possível determinar o usuário autenticado.' USING ERRCODE = 'P0001';
     END IF;
 
     -- 2. Validar titularidade, existência e status ativo do animal de origem em pet_found_alerts
     SELECT pfa.pet_type, pfa.status 
     INTO v_source_alert_pet_type, v_source_alert_status
     FROM public.pet_found_alerts pfa
-    WHERE pfa.id = exclude_pet_id AND pfa.user_id = v_calling_user;
+    WHERE pfa.id = v_source_id AND pfa.user_id = v_calling_user;
 
     IF v_source_alert_pet_type IS NULL THEN
-        RAISE EXCEPTION 'Animal de origem não encontrado ou não pertence ao usuário autenticado.';
+        RAISE EXCEPTION 'Animal de origem não encontrado ou não pertence ao usuário autenticado.' USING ERRCODE = 'P0003';
     END IF;
 
     IF v_source_alert_status <> 'active' THEN
-        RAISE EXCEPTION 'O alerta do animal de origem não está ativo.';
+        RAISE EXCEPTION 'O alerta do animal de origem não está ativo.' USING ERRCODE = 'P0004';
     END IF;
 
-    v_normalized_species := pg_catalog.lower(pg_catalog.trim(v_source_alert_pet_type));
+    v_normalized_species := pg_catalog.lower(pg_catalog.btrim(v_source_alert_pet_type));
 
-    -- Validar elegibilidade da espécie
     IF v_normalized_species NOT IN ('dog', 'cat') THEN
-        RAISE EXCEPTION 'Espécie do animal não é elegível para busca visual por IA.';
+        RAISE EXCEPTION 'Espécie do animal não é elegível para busca visual por IA.' USING ERRCODE = 'P0005';
     END IF;
 
-    -- Validar compatibilidade de espécie
-    IF target_pet_type IS NOT NULL AND pg_catalog.lower(pg_catalog.trim(target_pet_type)) <> v_normalized_species THEN
-        RAISE EXCEPTION 'Espécie alvo incompatível com a espécie do animal de origem.';
+    IF target_pet_type IS NOT NULL AND pg_catalog.lower(pg_catalog.btrim(target_pet_type)) <> v_normalized_species THEN
+        RAISE EXCEPTION 'Espécie alvo incompatível com a espécie do animal de origem.' USING ERRCODE = 'P0006';
     END IF;
 
-    -- 3. Recuperar EXCLUSIVAMENTE o embedding oficial persistido
-    SELECT pvp.aggregated_embedding, pvp.pet_type 
-    INTO v_source_embedding, v_source_profile_pet_type
-    FROM public.pet_visual_profiles pvp
-    WHERE pvp.pet_id = exclude_pet_id;
+    -- 3. Validar se o animal de origem possui perfil visual com embeddings válidos (agregado OU individuais)
+    SELECT EXISTS (
+        SELECT 1 FROM public.pet_visual_profiles pvp
+        WHERE pvp.pet_id = v_source_id
+          AND pvp.aggregated_embedding IS NOT NULL
+          AND public.vector_dims(pvp.aggregated_embedding) = 768
+    ) OR EXISTS (
+        SELECT 1 FROM public.pet_images pi
+        WHERE pi.pet_id = v_source_id
+          AND pi.embedding IS NOT NULL
+          AND public.vector_dims(pi.embedding) = 768
+    ) INTO v_source_has_embeddings;
 
-    IF v_source_embedding IS NULL THEN
-        RAISE EXCEPTION 'Animal de origem não possui perfil visual com embedding oficial persistido.';
-    END IF;
-
-    IF public.vector_dims(v_source_embedding) <> 768 THEN
-        RAISE EXCEPTION 'Dimensão do embedding oficial inválida. Esperado vetor de 768 dimensões.';
-    END IF;
-
-    IF v_source_profile_pet_type IS NOT NULL AND pg_catalog.lower(pg_catalog.trim(v_source_profile_pet_type)) <> v_normalized_species THEN
-        RAISE EXCEPTION 'Inconsistência de espécie entre o alerta do animal e seu perfil visual.';
+    IF NOT v_source_has_embeddings THEN
+        RAISE EXCEPTION 'Animal de origem não possui embeddings visuais válidos de 768 dimensões.' USING ERRCODE = 'P0007';
     END IF;
 
     -- 4. Normalização defensiva de parâmetros
-    IF similarity_threshold IS NULL OR similarity_threshold < 0.0 OR similarity_threshold > 1.0 THEN
-        similarity_threshold := 0.70;
+    -- Limiar fixo e inviolável no servidor: 0.70
+    v_norm_threshold := 0.70;
+
+    v_norm_limit := COALESCE(match_limit, 20);
+    IF v_norm_limit < 1 OR v_norm_limit > 100 THEN
+        v_norm_limit := 20;
     END IF;
 
-    IF match_limit IS NULL OR match_limit < 1 OR match_limit > 100 THEN
-        match_limit := 20;
-    END IF;
-
-    -- 5. Busca vetorial
+    -- 5 & 6. Persistência atômica via CTE sem tabelas temporárias
+    -- Ordem canônica de chamada: calculate_match_score(lost_pet_id, found_pet_id) -> pla.id é lost, v_source_id é found
     RETURN QUERY
-    SELECT
-        pvp.pet_id,
-        (1 - (pvp.aggregated_embedding OPERATOR(public.<=>) v_source_embedding))::double precision AS similarity_score
-    FROM public.pet_visual_profiles pvp
-    INNER JOIN public.pet_lost_alerts pla ON pla.id = pvp.pet_id
-    WHERE pg_catalog.lower(pg_catalog.trim(pvp.pet_type)) = v_normalized_species
-      AND pg_catalog.lower(pg_catalog.trim(pla.pet_type)) = v_normalized_species
-      AND pla.status = 'active'
-      AND pvp.pet_id <> exclude_pet_id
-      AND pvp.aggregated_embedding IS NOT NULL
-      AND (1 - (pvp.aggregated_embedding OPERATOR(public.<=>) v_source_embedding)) >= similarity_threshold
-    ORDER BY pvp.aggregated_embedding OPERATOR(public.<=>) v_source_embedding ASC
-    LIMIT match_limit;
+    WITH ranked AS (
+        SELECT
+            pla.id AS lost_id,
+            v_source_id AS found_id,
+            ms.score AS calc_score,
+            ms.match_method AS calc_method,
+            ms.individual_scores AS calc_individual
+        FROM public.pet_lost_alerts pla
+        CROSS JOIN LATERAL public.calculate_match_score(pla.id, v_source_id) ms
+        WHERE pg_catalog.lower(pg_catalog.btrim(pla.pet_type)) = v_normalized_species
+          AND pla.status = 'active'
+          AND pla.id <> v_source_id
+          AND pla.user_id <> v_calling_user
+          AND ms.score >= v_norm_threshold
+        ORDER BY ms.score DESC, pla.id ASC
+        LIMIT v_norm_limit
+    ),
+    upserted AS (
+        INSERT INTO public.matches (
+            lost_pet_id,
+            found_pet_id,
+            similarity_score,
+            match_method,
+            status,
+            origin,
+            individual_scores,
+            created_at,
+            updated_at
+        )
+        SELECT
+            r.lost_id,
+            r.found_id,
+            r.calc_score,
+            r.calc_method,
+            'pending',
+            'automatic',
+            r.calc_individual,
+            NOW(),
+            NOW()
+        FROM ranked r
+        ON CONFLICT (lost_pet_id, found_pet_id) DO UPDATE SET
+            similarity_score = GREATEST(public.matches.similarity_score, EXCLUDED.similarity_score),
+            match_method = CASE
+                WHEN EXCLUDED.similarity_score >= public.matches.similarity_score THEN EXCLUDED.match_method
+                ELSE public.matches.match_method
+            END,
+            individual_scores = CASE
+                WHEN EXCLUDED.similarity_score >= public.matches.similarity_score THEN EXCLUDED.individual_scores
+                ELSE public.matches.individual_scores
+            END,
+            origin = 'automatic',
+            updated_at = NOW()
+        RETURNING matches.lost_pet_id AS ret_pet_id, matches.similarity_score AS ret_score
+    )
+    SELECT u.ret_pet_id AS pet_id, u.ret_score AS similarity_score
+    FROM upserted u
+    ORDER BY u.ret_score DESC, u.ret_pet_id ASC;
 END;
 $$;
 
 -- ------------------------------------------------------------------------------
--- 7. ATUALIZAÇÃO DA TRIGGER FUNCTION DE NOTIFICAÇÃO
+-- 5.3 RPC DE PERSISTÊNCIA SEGURA DE CORRESPONDÊNCIAS MANUAIS (save_match)
+-- ------------------------------------------------------------------------------
+-- SEGURANÇA D1 e D2: Elimina escrita direta no cliente REST/PostgREST.
+-- Atribuição estrita de origin = 'manual' (cliente não pode forjar 'automatic').
+-- Valida no servidor: autenticação, status dos alertas, espécies e titularidade.
+-- Calcula a pontuação oficial usando a fórmula multi-sinal (0.50 maior + 0.30 média + 0.20 agregado).
+-- Preserva individual_scores real e idempotência com GREATEST sob concorrência.
+CREATE OR REPLACE FUNCTION public.save_match(
+    p_lost_pet_id uuid,
+    p_found_pet_id uuid,
+    p_match_method text DEFAULT 'visual_multi_vector',
+    p_similarity_threshold double precision DEFAULT 0.70
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_user_id uuid;
+    v_lost_pet public.pet_lost_alerts%ROWTYPE;
+    v_found_pet public.pet_found_alerts%ROWTYPE;
+    v_lost_profile public.pet_visual_profiles%ROWTYPE;
+    v_found_profile public.pet_visual_profiles%ROWTYPE;
+    v_agg_similarity double precision := NULL;
+    v_pair_similarities double precision[] := ARRAY[]::double precision[];
+    v_max_sim double precision := 0.0;
+    v_avg_sim double precision := 0.0;
+    v_calculated_score double precision := 0.0;
+    v_persisted_score double precision;
+    v_persisted_origin text;
+    v_match_id uuid;
+    v_threshold double precision;
+    v_q_emb public.vector(768);
+    v_c_emb public.vector(768);
+    v_best_for_q double precision;
+    v_sim double precision;
+    v_sum_pairs double precision := 0.0;
+    v_count_pairs integer := 0;
+BEGIN
+    -- 1. Validar autenticação do chamador
+    v_user_id := auth.uid();
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Acesso negado: operação requer usuário autenticado.' USING ERRCODE = 'P0001';
+    END IF;
+
+    -- Normalização e validação de limiar: fixo em 0.70 no servidor
+    v_threshold := 0.70;
+
+    -- 2. Validar existência e status ativo do pet perdido
+    SELECT * INTO v_lost_pet FROM public.pet_lost_alerts WHERE id = p_lost_pet_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Animal perdido não encontrado.' USING ERRCODE = 'P0002';
+    END IF;
+    IF v_lost_pet.status <> 'active' THEN
+        RAISE EXCEPTION 'O alerta do animal perdido não está ativo.' USING ERRCODE = 'P0003';
+    END IF;
+
+    -- 3. Validar existência e status ativo do pet encontrado
+    SELECT * INTO v_found_pet FROM public.pet_found_alerts WHERE id = p_found_pet_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Animal encontrado não encontrado.' USING ERRCODE = 'P0004';
+    END IF;
+    IF v_found_pet.status <> 'active' THEN
+        RAISE EXCEPTION 'O alerta do animal encontrado não está ativo.' USING ERRCODE = 'P0005';
+    END IF;
+
+    -- 4. Validar compatibilidade estrita de espécies (cão != gato)
+    IF pg_catalog.lower(pg_catalog.btrim(v_lost_pet.pet_type)) <> pg_catalog.lower(pg_catalog.btrim(v_found_pet.pet_type)) THEN
+        RAISE EXCEPTION 'Incompatibilidade de espécie entre os animais da correspondência.' USING ERRCODE = 'P0006';
+    END IF;
+
+    -- 5. Validar titularidade do chamador: DEVE ser o proprietário do lost_pet OU do found_pet
+    IF v_lost_pet.user_id <> v_user_id AND v_found_pet.user_id <> v_user_id THEN
+        RAISE EXCEPTION 'Usuário não possui titularidade sobre nenhum dos animais envolvidos.' USING ERRCODE = 'P0007';
+    END IF;
+
+    -- 6. Validar existência dos perfis visuais oficiais
+    SELECT * INTO v_lost_profile FROM public.pet_visual_profiles WHERE pet_id = p_lost_pet_id;
+    SELECT * INTO v_found_profile FROM public.pet_visual_profiles WHERE pet_id = p_found_pet_id;
+
+    IF v_lost_profile.pet_id IS NULL OR v_found_profile.pet_id IS NULL THEN
+        RAISE EXCEPTION 'Perfis visuais necessários para validação não foram encontrados.' USING ERRCODE = 'P0008';
+    END IF;
+
+    -- 7. Calcular similaridade agregada se ambos tiverem embeddings agregados válidos de 768d
+    IF v_lost_profile.aggregated_embedding IS NOT NULL
+       AND v_found_profile.aggregated_embedding IS NOT NULL
+       AND public.vector_dims(v_lost_profile.aggregated_embedding) = 768
+       AND public.vector_dims(v_found_profile.aggregated_embedding) = 768
+    THEN
+        v_agg_similarity := 1.0 - (v_lost_profile.aggregated_embedding OPERATOR(public.<=>) v_found_profile.aggregated_embedding);
+    END IF;
+
+    -- 8. Calcular similaridades individuais entre as fotos de pet_images (fórmula oficial do projeto)
+    -- SOMENTE se ambos os pets possuírem imagens com embedding válido de 768d
+    -- (espelha calculate_match_score e VectorMath.computeDetailedMatchScore)
+    IF EXISTS (
+        SELECT 1 FROM public.pet_images
+        WHERE pet_id = p_lost_pet_id AND embedding IS NOT NULL AND public.vector_dims(embedding) = 768
+    ) AND EXISTS (
+        SELECT 1 FROM public.pet_images
+        WHERE pet_id = p_found_pet_id AND embedding IS NOT NULL AND public.vector_dims(embedding) = 768
+    ) THEN
+        FOR v_q_emb IN
+            SELECT pi.embedding
+            FROM public.pet_images pi
+            WHERE pi.pet_id = p_lost_pet_id
+              AND pi.embedding IS NOT NULL
+              AND public.vector_dims(pi.embedding) = 768
+        LOOP
+            v_best_for_q := 0.0;
+            FOR v_c_emb IN
+                SELECT pi2.embedding
+                FROM public.pet_images pi2
+                WHERE pi2.pet_id = p_found_pet_id
+                  AND pi2.embedding IS NOT NULL
+                  AND public.vector_dims(pi2.embedding) = 768
+            LOOP
+                v_sim := 1.0 - (v_q_emb OPERATOR(public.<=>) v_c_emb);
+                IF v_sim > v_best_for_q THEN
+                    v_best_for_q := v_sim;
+                END IF;
+            END LOOP;
+
+            -- Adiciona SEMPRE (incluindo zero), espelhando VectorMath.computeDetailedMatchScore
+            -- (Dart: pairSimilarities.add(bestForQ) incondicionalmente)
+            v_pair_similarities := array_append(v_pair_similarities, v_best_for_q);
+            v_sum_pairs := v_sum_pairs + v_best_for_q;
+            v_count_pairs := v_count_pairs + 1;
+            IF v_best_for_q > v_max_sim THEN
+                v_max_sim := v_best_for_q;
+            END IF;
+        END LOOP;
+    END IF;
+
+    -- 9. Aplicação da fórmula obrigatória: 0.50 * maior + 0.30 * média + 0.20 * agregado
+    IF v_count_pairs > 0 THEN
+        v_avg_sim := v_sum_pairs / v_count_pairs;
+        IF v_agg_similarity IS NOT NULL AND v_agg_similarity > 0.0 THEN
+            v_calculated_score := (0.50 * v_max_sim + 0.30 * v_avg_sim + 0.20 * v_agg_similarity);
+        ELSE
+            v_calculated_score := (0.60 * v_max_sim + 0.40 * v_avg_sim);
+        END IF;
+    ELSIF v_agg_similarity IS NOT NULL THEN
+        v_calculated_score := v_agg_similarity;
+        v_pair_similarities := ARRAY[v_agg_similarity];
+    ELSE
+        RAISE EXCEPTION 'Não existem embeddings válidos suficientes para calcular a correspondência.' USING ERRCODE = 'P0009';
+    END IF;
+
+    -- Limita score no intervalo [0.0, 1.0]
+    v_calculated_score := GREATEST(0.0, LEAST(1.0, v_calculated_score));
+
+    -- 10. Validação de legitimidade contra o limiar mínimo de similaridade
+    IF v_calculated_score < v_threshold THEN
+        RETURN pg_catalog.jsonb_build_object(
+            'success', false,
+            'reason', 'similarity_below_threshold',
+            'similarity_score', v_calculated_score,
+            'threshold', v_threshold
+        );
+    END IF;
+
+    -- 11. Persistência idempotente e atômica com ON CONFLICT (lost_pet_id, found_pet_id)
+    -- Origem via save_match é SEMPRE 'manual'. Se já existia como 'automatic', preserva 'automatic'.
+    INSERT INTO public.matches (
+        lost_pet_id,
+        found_pet_id,
+        similarity_score,
+        match_method,
+        status,
+        origin,
+        individual_scores,
+        created_at,
+        updated_at
+    ) VALUES (
+        p_lost_pet_id,
+        p_found_pet_id,
+        v_calculated_score,
+        COALESCE(p_match_method, 'visual_multi_vector'),
+        'pending',
+        'manual',
+        pg_catalog.to_jsonb(v_pair_similarities),
+        NOW(),
+        NOW()
+    )
+    ON CONFLICT (lost_pet_id, found_pet_id) DO UPDATE SET
+        similarity_score = GREATEST(public.matches.similarity_score, EXCLUDED.similarity_score),
+        match_method = CASE
+            WHEN EXCLUDED.similarity_score >= public.matches.similarity_score THEN EXCLUDED.match_method
+            ELSE public.matches.match_method
+        END,
+        individual_scores = CASE
+            WHEN EXCLUDED.similarity_score >= public.matches.similarity_score THEN EXCLUDED.individual_scores
+            ELSE public.matches.individual_scores
+        END,
+        updated_at = NOW()
+    RETURNING id, similarity_score, origin INTO v_match_id, v_persisted_score, v_persisted_origin;
+
+    RETURN pg_catalog.jsonb_build_object(
+        'success', true,
+        'match_id', v_match_id,
+        'similarity_score', v_persisted_score,
+        'origin', v_persisted_origin
+    );
+END;
+$$;
+
+-- ------------------------------------------------------------------------------
+-- 6. ATUALIZAÇÃO DA TRIGGER FUNCTION DE NOTIFICAÇÃO
 -- ------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_auto_match_notification()
 RETURNS TRIGGER 
@@ -552,35 +892,33 @@ AFTER INSERT OR UPDATE OF origin ON public.matches
 FOR EACH ROW EXECUTE FUNCTION public.handle_auto_match_notification();
 
 -- ------------------------------------------------------------------------------
--- 8. PERMISSÕES E GRANTS EXPLÍCITOS
+-- 7. PERMISSÕES E GRANTS EXPLÍCITOS DAS RPCs DE RECONHECIMENTO
 -- ------------------------------------------------------------------------------
-REVOKE ALL ON FUNCTION public.match_found_pets_for_lost(public.vector(768), character varying, uuid, double precision, integer) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.match_found_pets_for_lost(public.vector(768), character varying, uuid, double precision, integer) TO authenticated, service_role;
+-- Função auxiliar interna de cálculo: revogada de PUBLIC, anon e authenticated.
+-- As RPCs chamadoras são SECURITY DEFINER e executam como o owner da função,
+-- portanto calculate_match_score é invocada com a permissão do owner (superuser/postgres),
+-- não precisando de grant direto para authenticated.
+REVOKE ALL ON FUNCTION public.calculate_match_score(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.calculate_match_score(uuid, uuid) TO service_role;
 
-REVOKE ALL ON FUNCTION public.match_lost_pets_for_found(public.vector(768), character varying, uuid, double precision, integer) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.match_lost_pets_for_found(public.vector(768), character varying, uuid, double precision, integer) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.match_found_pets_for_lost(uuid, character varying, uuid, double precision, integer, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.match_found_pets_for_lost(uuid, character varying, uuid, double precision, integer, uuid) TO authenticated, service_role;
 
-REVOKE ALL ON FUNCTION public.delete_own_user() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.delete_own_user() TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.match_lost_pets_for_found(uuid, character varying, uuid, double precision, integer, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.match_lost_pets_for_found(uuid, character varying, uuid, double precision, integer, uuid) TO authenticated, service_role;
 
-REVOKE ALL ON FUNCTION public.is_email_locked(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.is_email_locked(text) TO anon, authenticated, service_role;
-
-REVOKE ALL ON FUNCTION public.register_login_attempt(text, boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.register_login_attempt(text, boolean) TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.save_match(uuid, uuid, text, double precision) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.save_match(uuid, uuid, text, double precision) TO authenticated, service_role;
 
 -- Revoga acesso público de anon às tabelas de embeddings internos
 REVOKE ALL ON public.pet_images FROM anon;
 REVOKE ALL ON public.pet_visual_profiles FROM anon;
 
 -- ------------------------------------------------------------------------------
--- 9. SANEAMENTO E REFORÇO DE POLÍTICAS ROW LEVEL SECURITY (RLS)
+-- 8. SANEAMENTO E REFORÇO DE POLÍTICAS ROW LEVEL SECURITY (RLS) DO MÓDULO VISUAL
 -- ------------------------------------------------------------------------------
 
--- 9.1 profiles: Revogar política permissiva que expõe dados cadastrais de terceiros
-DROP POLICY IF EXISTS "Qualquer usuário autenticado pode ver perfis" ON public.profiles;
-
--- 9.2 pet_images: Proteção de embeddings e mutação restrita ao titular
+-- 8.1 pet_images: Proteção de embeddings e mutação restrita ao titular
 DROP POLICY IF EXISTS "pet_images_select_public" ON public.pet_images;
 DROP POLICY IF EXISTS "pet_images_select_owner" ON public.pet_images;
 CREATE POLICY "pet_images_select_owner" ON public.pet_images
@@ -625,21 +963,21 @@ FOR DELETE USING (
     )
 );
 
--- 9.3 pet_visual_profiles: Leitura para autenticados; mutação restrita ao titular
--- DECISÃO ARQUITETURAL (SELECT USING true):
--- O pipeline de reconhecimento visual do Flutter lê perfis de outros usuários legitimamente
--- (getVisualProfile, getVisualProfilesByIds) para calcular similaridade de candidatos
--- retornados pelas RPCs pgvector. Restringir o SELECT ao próprio dono quebraria
--- completamente o matching. Essa decisão é um trade-off deliberado: embeddings de
--- outros usuários ficam visíveis para qualquer autenticado via API direta.
--- Mitigação existente: (1) RPCs SECURITY DEFINER consomem embedding apenas da base,
--- sem aceitar vetor do cliente; (2) REVOKE ALL FROM anon impede acesso não autenticado.
--- Para proteção adicional futura considerar: view sem coluna aggregated_embedding
--- + GRANT somente na view para leitura pública, mantendo acesso direto via service_role.
+-- 8.2 pet_visual_profiles: Leitura e mutações restritas ao titular do animal
+-- SEGURANÇA D1 RESOLVIDA:
+-- A política permissiva SELECT USING (true) foi eliminada. Apenas os proprietários
+-- legítimos de pet_lost_alerts ou pet_found_alerts podem consultar diretamente seus
+-- próprios perfis visuais. A busca vetorial e o cálculo de similaridade contra animais
+-- de terceiros ocorrem exclusivamente no servidor via RPCs SECURITY DEFINER, sem jamais
+-- expor os vetores de embeddings SigLIP a clientes ou usuários terceiros.
 DROP POLICY IF EXISTS "pet_visual_profiles_select_public" ON public.pet_visual_profiles;
 DROP POLICY IF EXISTS "pet_visual_profiles_select_authenticated" ON public.pet_visual_profiles;
-CREATE POLICY "pet_visual_profiles_select_authenticated" ON public.pet_visual_profiles
-FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "pet_visual_profiles_select_owner" ON public.pet_visual_profiles;
+CREATE POLICY "pet_visual_profiles_select_owner" ON public.pet_visual_profiles
+FOR SELECT TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.pet_lost_alerts WHERE id = pet_id AND user_id = auth.uid()) OR
+    EXISTS (SELECT 1 FROM public.pet_found_alerts WHERE id = pet_id AND user_id = auth.uid())
+);
 
 DROP POLICY IF EXISTS "pet_visual_profiles_all_authenticated" ON public.pet_visual_profiles;
 DROP POLICY IF EXISTS "pet_visual_profiles_manage_owner" ON public.pet_visual_profiles;
@@ -653,17 +991,13 @@ FOR ALL TO authenticated USING (
     EXISTS (SELECT 1 FROM public.pet_found_alerts WHERE id = pet_id AND user_id = auth.uid())
 );
 
--- 9.4 matches: Leitura restrita aos titulares envolvidos (lost_pet_id ou found_pet_id)
--- Inserção e atualização restrita ao titular de ao menos um dos pets envolvidos
--- DECISÃO ARQUITETURAL (INSERT/UPDATE com OR):
--- O Flutter chama saveMatch diretamente (cliente autenticado), tanto para buscas manuais
--- quanto automáticas — origem determinada pelo parâmetro 'origin'. Exigir propriedade
--- dos DOIS animais bloquearia o caso central: o dono do pet perdido salva correspondências
--- com pets encontrados de outros usuários. A política atual (OR) permite isso
--- intencionalmente. RISCO RESIDUAL: um usuário pode associar seu pet a qualquer
--- found_pet_id válido. Mitigação futura recomendada: mover saveMatch para uma RPC
--- SECURITY DEFINER ou Edge Function que valide a origem do match antes da persistência,
--- removendo o INSERT direto do cliente e substituindo por service_role apenas.
+-- 8.3 matches: Leitura restrita aos titulares envolvidos (lost_pet_id ou found_pet_id); escrita direta vedada
+-- SEGURANÇA D2 RESOLVIDA:
+-- Inserções e atualizações diretas na tabela matches via cliente REST/PostgREST foram REVOGADAS.
+-- Nenhuma política de INSERT ou UPDATE é concedida a authenticated ou anon.
+-- Toda persistência de correspondência é realizada exclusivamente pela RPC public.save_match() (SECURITY DEFINER),
+-- que valida autenticação, existência, status ativo, compatibilidade estrita de espécie, titularidade
+-- e calcula a pontuação real a partir dos embeddings oficiais, impedindo matches arbitrários ou pontuações manipuladas.
 DROP POLICY IF EXISTS "matches_select_public" ON public.matches;
 DROP POLICY IF EXISTS "matches_select_authenticated" ON public.matches;
 DROP POLICY IF EXISTS "matches_select_involved_owner" ON public.matches;
@@ -678,32 +1012,16 @@ DROP POLICY IF EXISTS "matches_update_authenticated" ON public.matches;
 DROP POLICY IF EXISTS "matches_insert_owner" ON public.matches;
 DROP POLICY IF EXISTS "matches_update_owner" ON public.matches;
 
-CREATE POLICY "matches_insert_owner" ON public.matches
-FOR INSERT WITH CHECK (
-    auth.role() = 'authenticated' AND (
-        EXISTS (SELECT 1 FROM public.pet_lost_alerts WHERE id = lost_pet_id AND user_id = auth.uid()) OR
-        EXISTS (SELECT 1 FROM public.pet_found_alerts WHERE id = found_pet_id AND user_id = auth.uid())
-    )
-);
+-- 8.4 pet_found_alerts: Permitir exclusão pelo próprio usuário criador
+DROP POLICY IF EXISTS "Permitir exclusão do próprio alerta encontrado" ON public.pet_found_alerts;
+CREATE POLICY "Permitir exclusão do próprio alerta encontrado" ON public.pet_found_alerts
+FOR DELETE USING (auth.uid() = user_id);
 
-CREATE POLICY "matches_update_owner" ON public.matches
-FOR UPDATE USING (
-    auth.role() = 'authenticated' AND (
-        EXISTS (SELECT 1 FROM public.pet_lost_alerts WHERE id = lost_pet_id AND user_id = auth.uid()) OR
-        EXISTS (SELECT 1 FROM public.pet_found_alerts WHERE id = found_pet_id AND user_id = auth.uid())
-    )
-) WITH CHECK (
-    auth.role() = 'authenticated' AND (
-        EXISTS (SELECT 1 FROM public.pet_lost_alerts WHERE id = lost_pet_id AND user_id = auth.uid()) OR
-        EXISTS (SELECT 1 FROM public.pet_found_alerts WHERE id = found_pet_id AND user_id = auth.uid())
-    )
-);
-
--- 9.5 notifications: Revogação de inserção direta por clientes
+-- 8.5 notifications: Revogação de inserção direta por clientes
 DROP POLICY IF EXISTS "notifications_insert_authenticated" ON public.notifications;
 
 -- ------------------------------------------------------------------------------
--- 10. STORAGE (CONFIGURAÇÃO DEFENSIVA DE BUCKETS E POLÍTICAS)
+-- 9. STORAGE (CONFIGURAÇÃO DEFENSIVA DE BUCKETS E POLÍTICAS DE PETS)
 -- ------------------------------------------------------------------------------
 -- Preserva configuração existente sem forçar public = true compulsoriamente
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -810,6 +1128,17 @@ FOR DELETE USING (
     AND auth.role() = 'authenticated'
     AND auth.uid()::text = (storage.foldername(name))[1]
 );
+
+-- ------------------------------------------------------------------------------
+-- 10. PERMISSÕES E GRANTS DA TABELA matches
+-- ------------------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.save_match(uuid, uuid, text, double precision) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.save_match(uuid, uuid, text, double precision) TO authenticated, service_role;
+
+-- Revoga acesso de anon e impede escrita direta por authenticated na tabela matches
+REVOKE ALL ON public.matches FROM anon;
+REVOKE INSERT, UPDATE, DELETE ON public.matches FROM authenticated;
+GRANT SELECT ON public.matches TO authenticated;
 
 COMMIT;
 

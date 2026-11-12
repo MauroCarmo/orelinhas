@@ -52,10 +52,23 @@ class VectorMath {
     return sum;
   }
 
+  /// Verifica se um vetor de embedding é válido:
+  /// - não nulo
+  /// - dimensão igual a [expectedDimension] (padrão 768)
+  /// - todos os valores finitos (sem NaN, sem Infinity)
+  static bool isValidEmbedding(List<double>? v, {int expectedDimension = 768}) {
+    if (v == null || v.length != expectedDimension) return false;
+    return v.every((x) => x.isFinite);
+  }
+
   /// Calcula a similaridade de cosseno entre dois vetores de embeddings.
   /// Retorna um valor entre -1.0 e 1.0 (ou 0.0 a 1.0 na prática de embeddings).
   static double cosineSimilarity(List<double>? a, List<double>? b) {
     if (a == null || b == null || a.isEmpty || b.isEmpty || a.length != b.length) {
+      return 0.0;
+    }
+    // Rejeita vetores com valores inválidos
+    if (!a.every((x) => x.isFinite) || !b.every((x) => x.isFinite)) {
       return 0.0;
     }
 
@@ -79,7 +92,7 @@ class VectorMath {
   }) {
     final nonNullVectors = validEmbeddings
         .whereType<List<double>>()
-        .where((v) => v.length == expectedDimension)
+        .where((v) => v.length == expectedDimension && v.every((x) => x.isFinite))
         .toList();
 
     if (nonNullVectors.isEmpty) return null;

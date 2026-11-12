@@ -8,6 +8,7 @@ import '../../domain/models/pet_cadastral_filter_entity.dart';
 import '../../domain/models/pet_image_analysis_entity.dart';
 import '../../domain/models/pet_match_candidate_entity.dart';
 import '../../domain/models/pet_visual_profile_entity.dart';
+import '../../domain/utils/recognition_config.dart';
 import '../../domain/utils/vector_math.dart';
 import '../services/ai_vision_service.dart';
 import '../services/supabase_pet_recognition_service.dart';
@@ -49,6 +50,11 @@ class PetRecognitionRepository {
 
     // Se for espécie diferente de cão e gato, não executa pipeline visual
     if (petType != PetType.dog && petType != PetType.cat) {
+      await _supabaseService.pruneStalePetImages(
+        petId: petId,
+        activeImageUrls: targetUrls,
+      );
+
       for (int i = 0; i < targetUrls.length; i++) {
         analyzedImages.add(
           PetImageAnalysisEntity(
@@ -73,11 +79,29 @@ class PetRecognitionRepository {
       return profile;
     }
 
+    // 1. Recupera embeddings de fotos anteriores já salvas para este pet (evita reprocessar fotos inalteradas)
+    final existingImagesMap = await _supabaseService.getExistingPetImageEmbeddings(petId);
+
     // Processa cada imagem individualmente (YOLOv8n + SigLIP) - até 3 fotos
     for (int i = 0; i < targetUrls.length; i++) {
       final imgUrl = targetUrls[i];
       final imageId = 'img_${petId}_$i';
       final selectedBox = selectedAnimalPerImage?[imgUrl];
+
+      // Se a imagem já possui embedding válido persistido e nenhuma bbox manual foi enviada, reutiliza
+      if (existingImagesMap.containsKey(imgUrl) && selectedBox == null) {
+        final cachedEmbedding = existingImagesMap[imgUrl]!;
+        analyzedImages.add(
+          PetImageAnalysisEntity(
+            id: imageId,
+            imageUrl: imgUrl,
+            status: AnalysisStatus.processed,
+            embedding: cachedEmbedding,
+            processedAt: DateTime.now(),
+          ),
+        );
+        continue;
+      }
 
       try {
         final result = await _aiVisionService.analyzeImage(
@@ -122,12 +146,27 @@ class PetRecognitionRepository {
       }
     }
 
-    // Geração do embedding agregado com normalização L2 sobre os válidos
-    final validEmbeddings = analyzedImages
-        .where((img) => img.hasValidEmbedding)
-        .map((img) => img.embedding)
-        .toList();
+    // 2. Sincroniza a tabela pet_images com as imagens ativas atuais:
+    // Imagens que deixaram de pertencer ao anúncio são expurgadas da tabela de embeddings
+    await _supabaseService.pruneStalePetImages(
+      petId: petId,
+      activeImageUrls: targetUrls,
+    );
 
+    // 3. Mescla os embeddings recém-processados com os existentes preservados
+    final Map<String, List<double>> mergedEmbeddings = {};
+    for (final url in targetUrls) {
+      if (existingImagesMap.containsKey(url)) {
+        mergedEmbeddings[url] = existingImagesMap[url]!;
+      }
+    }
+    for (final img in analyzedImages) {
+      if (img.hasValidEmbedding && img.embedding != null) {
+        mergedEmbeddings[img.imageUrl] = img.embedding!;
+      }
+    }
+
+    final validEmbeddings = mergedEmbeddings.values.toList();
     final aggregated = VectorMath.computeAggregatedEmbedding(validEmbeddings);
 
     final profile = PetVisualProfileEntity(
@@ -147,149 +186,277 @@ class PetRecognitionRepository {
     return await _supabaseService.getVisualProfile(petId);
   }
 
-  /// Executa a busca por possíveis correspondências (Matches):
-  /// Comparação estritamente visual baseada nos embeddings das imagens (SigLIP 768d + Cosseno).
+  /// Executa a busca por possíveis correspondências para um pet perdido.
+  /// Suporta tanto o fluxo automático quanto a busca manual disparada pelo usuário.
+  /// 
+  /// Utiliza preferencialmente a função RPC pgvector `match_found_pets_for_lost` com fallback
+  /// local via cosseno caso o ambiente não suporte a RPC.
   Future<List<PetMatchCandidateEntity>> findMatches({
     required PetLostAlertEntity queryPet,
     PetVisualProfileEntity? queryVisualProfile,
-    double minSimilarity = 0.70,
+    double minSimilarity = RecognitionConfig.kSimilarityThreshold,
+    String origin = 'manual',
+    List<PetFoundAlertEntity>? candidateFoundPets,
   }) async {
-    _logger.i('Iniciando busca visual de matches por embeddings de imagem.', context: {
+    _logger.i('Iniciando busca visual unificada de matches.', context: {
       'queryPetId': queryPet.id,
       'petType': queryPet.petType.name,
-      'hasVisual': queryVisualProfile?.hasVisualEmbedding,
+      'origin': origin,
+      'minSimilarity': minSimilarity,
     });
 
-    // 1. Recuperação de candidatos ativos da mesma espécie
-    final filter = PetCadastralFilterEntity.fromPetAlert(queryPet);
-    final candidateAlerts = await _supabaseService.getCandidateAlerts(
-      filters: filter,
-      excludePetId: queryPet.id,
-    );
+    final profile = queryVisualProfile ?? await getVisualProfile(queryPet.id);
+    if (profile == null || !profile.hasVisualEmbedding || !profile.isEligibleForVisualAi) {
+      _logger.i('Pet não possui perfil visual ou espécie não elegível para IA.');
+      return [];
+    }
 
-    if (candidateAlerts.isEmpty) {
+    final queryEmbedding = profile.representativeEmbedding;
+    if (queryEmbedding == null || !VectorMath.isValidEmbedding(queryEmbedding)) {
+      _logger.w('Embedding representativo do pet da busca inválido.');
       return [];
     }
 
     final List<PetMatchCandidateEntity> matches = [];
 
-    // Se houver perfil visual válido para a query:
-    final bool canPerformVisualMatch = queryVisualProfile != null &&
-        queryVisualProfile.hasVisualEmbedding &&
-        queryVisualProfile.isEligibleForVisualAi;
+    // 1. Tenta consulta vetorial via RPC do Supabase (pgvector + HNSW)
+    final rpcResults = await _supabaseService.callMatchRpc(
+      functionName: 'match_found_pets_for_lost',
+      targetPetType: queryPet.petType.name,
+      excludePetId: queryPet.id,
+      similarityThreshold: minSimilarity,
+      matchLimit: 20,
+    );
 
-    if (canPerformVisualMatch) {
-      final queryValidEmbeddings = queryVisualProfile.validImageAnalyses
-          .map((img) => img.embedding!)
-          .toList();
+    if (rpcResults.isNotEmpty) {
+      _logger.i('Matches recuperados via RPC pgvector.', context: {'count': rpcResults.length});
 
-      for (final candidate in candidateAlerts) {
-        // Regra estrita: nunca comparar espécies diferentes (cão != gato)
-        if (candidate.petType != queryPet.petType) continue;
+      for (final row in rpcResults) {
+        final foundPetId = row['pet_id'] as String;
+        final score = (row['similarity_score'] as num).toDouble();
 
-        final candidateProfile =
-            await _supabaseService.getVisualProfile(candidate.id);
+        // Usa o método do serviço que retorna PetLostAlertEntity (compatível com matchedPet)
+        final foundAsCandidate = await _supabaseService.getFoundAlertAsCandidate(foundPetId);
+        if (foundAsCandidate == null) continue;
 
-        // Se o candidato não possui fotos/embeddings válidos, desconsidera
-        if (candidateProfile == null || !candidateProfile.hasVisualEmbedding) {
-          continue;
-        }
+        final foundProfile = await getVisualProfile(foundPetId);
 
-        final candidateValidEmbeddings = candidateProfile.validImageAnalyses
-            .map((img) => img.embedding!)
-            .toList();
-
-        final aggregatedSim = VectorMath.cosineSimilarity(
-          queryVisualProfile.aggregatedEmbedding,
-          candidateProfile.aggregatedEmbedding,
+        // Persiste com a origem informada ('automatic' ou 'manual')
+        await _supabaseService.saveMatch(
+          lostPetId: queryPet.id,
+          foundPetId: foundPetId,
+          similarityScore: score,
+          matchMethod: 'visual_single_vector',
+          individualScores: [score],
+          origin: origin,
         );
 
-        // Score 100% puramente visual (cosseno sobre os embeddings das fotos)
-        final finalScore = VectorMath.computeDetailedMatchScore(
-          queryEmbeddings: queryValidEmbeddings,
-          candidateEmbeddings: candidateValidEmbeddings,
-          aggregatedSimilarity: aggregatedSim,
+        matches.add(
+          PetMatchCandidateEntity(
+            matchedPet: foundAsCandidate,
+            visualProfile: foundProfile,
+            similarityScore: score,
+            matchMethod: MatchMethod.visual,
+            individualImageScores: [score],
+            matchingDetails: 'Correspondência visual unificada por cosseno vetorial.',
+          ),
+        );
+      }
+
+      matches.sort((a, b) => b.similarityScore.compareTo(a.similarityScore));
+      return matches;
+    }
+
+    // 2. Fallback / Processamento local (para testes, mock ou indisponibilidade da RPC)
+    // Sempre usa PetLostAlertEntity como tipo canônico dos candidatos
+    List<PetLostAlertEntity> candidates;
+    if (candidateFoundPets != null && candidateFoundPets.isNotEmpty) {
+      // Converte PetFoundAlertEntity → PetLostAlertEntity para compatibilidade com matchedPet
+      candidates = candidateFoundPets.map((f) => PetLostAlertEntity(
+        id: f.id,
+        userId: f.userId,
+        petName: f.breed != null && f.breed!.isNotEmpty
+            ? 'Pet Encontrado (${f.breed})'
+            : 'Pet Encontrado',
+        petType: f.petType,
+        breed: f.breed,
+        description: f.description,
+        lastLocation: f.foundLocation,
+        lostDate: f.foundDate,
+        contact: f.contact ?? '',
+        imageUrl: f.imageUrl,
+        latitude: f.latitude,
+        longitude: f.longitude,
+      )).toList();
+    } else {
+      final filter = PetCadastralFilterEntity.fromPetAlert(queryPet);
+      candidates = await _supabaseService.getCandidateAlerts(
+        filters: filter,
+        excludePetId: queryPet.id,
+      );
+    }
+
+    for (final PetLostAlertEntity candidate in candidates) {
+      if (candidate.petType != queryPet.petType) continue;
+
+      final candidateId = candidate.id;
+
+      final candidateProfile = await _supabaseService.getVisualProfile(candidateId);
+      if (candidateProfile == null || !candidateProfile.hasVisualEmbedding) continue;
+
+      final candidateEmbedding = candidateProfile.representativeEmbedding;
+      if (candidateEmbedding == null || !VectorMath.isValidEmbedding(candidateEmbedding)) continue;
+
+      final similarity = VectorMath.cosineSimilarity(queryEmbedding, candidateEmbedding);
+
+      if (similarity >= minSimilarity) {
+        await _supabaseService.saveMatch(
+          lostPetId: queryPet.id,
+          foundPetId: candidateId,
+          similarityScore: similarity,
+          matchMethod: 'visual_single_vector',
+          individualScores: [similarity],
+          origin: origin,
         );
 
-        final List<double> individualScores = [];
-        for (final q in queryValidEmbeddings) {
-          double best = 0.0;
-          for (final c in candidateValidEmbeddings) {
-            final sim = VectorMath.cosineSimilarity(q, c);
-            if (sim > best) best = sim;
-          }
-          individualScores.add(best);
-        }
-
-        if (finalScore >= minSimilarity) {
-          // Persiste na tabela matches do Supabase (dispara o trigger de notificação)
-          await _supabaseService.saveMatch(
-            lostPetId: queryPet.id,
-            foundPetId: candidate.id,
-            similarityScore: finalScore,
-            matchMethod: 'visual',
-            individualScores: individualScores,
-          );
-
-          matches.add(
-            PetMatchCandidateEntity(
-              matchedPet: candidate,
-              visualProfile: candidateProfile,
-              similarityScore: finalScore,
-              matchMethod: MatchMethod.visual,
-              individualImageScores: individualScores,
-              matchingDetails:
-                  'Correspondência visual calculada a partir dos embeddings das fotos.',
-            ),
-          );
-        }
+        matches.add(
+          PetMatchCandidateEntity(
+            matchedPet: candidate,
+            visualProfile: candidateProfile,
+            similarityScore: similarity,
+            matchMethod: MatchMethod.visual,
+            individualImageScores: [similarity],
+            matchingDetails: 'Correspondência visual unificada por representação única.',
+          ),
+        );
       }
     }
 
-    // Ordena matches do maior score para o menor
     matches.sort((a, b) => b.similarityScore.compareTo(a.similarityScore));
     return matches;
+  }
+
+  /// Recupera as correspondências persistidas no Supabase sem recalcular IA.
+  Future<List<PetMatchCandidateEntity>> getPersistedMatchesForLostPet(
+    String lostPetId, {
+    double minSimilarity = RecognitionConfig.kSimilarityThreshold,
+  }) async {
+    _logger.i('Carregando matches persistidos para pet perdido.', context: {'lostPetId': lostPetId});
+    final rawMatches = await _supabaseService.getMatchesForLostPet(lostPetId, minScore: minSimilarity);
+
+    final List<PetMatchCandidateEntity> results = [];
+    for (final m in rawMatches) {
+      final foundPetId = m['found_pet_id'] as String?;
+      final score = (m['similarity_score'] as num?)?.toDouble() ?? 0.0;
+      if (foundPetId == null || score < minSimilarity) continue;
+
+      dynamic matchedPet;
+      // Usa o método do serviço que retorna PetLostAlertEntity (compatível com matchedPet)
+      matchedPet = await _supabaseService.getFoundAlertAsCandidate(foundPetId);
+
+      final profile = await getVisualProfile(foundPetId);
+
+      if (matchedPet != null) {
+        results.add(
+          PetMatchCandidateEntity(
+            matchedPet: matchedPet,
+            visualProfile: profile,
+            similarityScore: score,
+            matchMethod: MatchMethod.visual,
+            individualImageScores: [score],
+            matchingDetails: 'Correspondência recuperada do histórico persistido.',
+          ),
+        );
+      }
+    }
+
+    return results;
   }
 
   /// Executa o matching automático simplificado e otimizado quando um pet encontrado é cadastrado.
   /// 
   /// Compara a representação visual única do pet encontrado exclusivamente contra os pets perdidos ativos
-  /// da mesma espécie fornecidos em [activeLostPets].
+  /// da mesma espécie.
   /// 
   /// - Utiliza a representação visual única por pet (embedding agregado quando disponível, ou o embedding individual).
-  /// - Não recarrega os pets encontrados nem recalcula correspondências antigas desnecessariamente.
-  /// - Persiste na tabela matches apenas os pares que atingirem [minSimilarity] (padrão 0.70).
-  /// - Garante a ordem correta dos identificadores: lost_pet_id (pet perdido) e found_pet_id (pet encontrado).
+  /// - Tenta RPC pgvector e faz fallback local seguro.
+  /// - Persiste com origin = 'automatic' para notificar o tutor do pet perdido.
+  /// - Garante a ordem canônica dos IDs: lost_pet_id (pet perdido) e found_pet_id (pet encontrado).
   Future<List<PetMatchCandidateEntity>> matchFoundPetAgainstLostPets({
     required PetFoundAlertEntity foundPet,
     required PetVisualProfileEntity foundVisualProfile,
     required List<PetLostAlertEntity> activeLostPets,
-    double minSimilarity = 0.70,
+    double minSimilarity = RecognitionConfig.kSimilarityThreshold,
+    String origin = 'automatic',
   }) async {
     _logger.i('Iniciando matching automático para pet encontrado.', context: {
       'foundPetId': foundPet.id,
       'petType': foundPet.petType.name,
       'candidateLostCount': activeLostPets.length,
+      'origin': origin,
     });
 
-    // 1. Verificação de espécie e elegibilidade para IA visual
     if (!foundVisualProfile.isEligibleForVisualAi) {
-      _logger.i('Espécie não elegível para matching visual automático.', context: {
-        'petType': foundPet.petType.name,
-      });
+      _logger.i('Espécie não elegível para matching visual automático.');
       return [];
     }
 
-    // 2. Extrai a representação visual única do pet encontrado
     final foundEmbedding = foundVisualProfile.representativeEmbedding;
-    if (foundEmbedding == null || foundEmbedding.length != 768) {
-      _logger.w('Pet encontrado sem representação visual válida de 768d.', context: {
-        'petId': foundPet.id,
-      });
+    if (foundEmbedding == null || !VectorMath.isValidEmbedding(foundEmbedding)) {
+      _logger.w('Pet encontrado sem representação visual válida de 768d.');
       return [];
     }
 
-    // 3. Filtra estritamente pets perdidos ativos da mesma espécie e com ID distinto
+    final List<PetMatchCandidateEntity> matches = [];
+
+    // 1. Tenta consulta vetorial via RPC do Supabase (pgvector + HNSW)
+    final rpcResults = await _supabaseService.callMatchRpc(
+      functionName: 'match_lost_pets_for_found',
+      targetPetType: foundPet.petType.name,
+      excludePetId: foundPet.id,
+      similarityThreshold: minSimilarity,
+      matchLimit: 20,
+    );
+
+    if (rpcResults.isNotEmpty) {
+      _logger.i('Matches automáticos encontrados via RPC pgvector.', context: {'count': rpcResults.length});
+
+      for (final row in rpcResults) {
+        final lostPetId = row['pet_id'] as String;
+        final score = (row['similarity_score'] as num).toDouble();
+
+        // Usa o método do serviço que retorna PetLostAlertEntity diretamente
+        final lostAlert = await _supabaseService.getLostAlertById(lostPetId);
+        if (lostAlert == null) continue;
+
+        final lostProfile = await getVisualProfile(lostPetId);
+
+        await _supabaseService.saveMatch(
+          lostPetId: lostPetId,
+          foundPetId: foundPet.id,
+          similarityScore: score,
+          matchMethod: 'visual_single_vector',
+          individualScores: [score],
+          origin: origin,
+        );
+
+        matches.add(
+          PetMatchCandidateEntity(
+            matchedPet: lostAlert,
+            visualProfile: lostProfile,
+            similarityScore: score,
+            matchMethod: MatchMethod.visual,
+            individualImageScores: [score],
+            matchingDetails: 'Correspondência visual automática por busca vetorial pgvector.',
+          ),
+        );
+      }
+
+      matches.sort((a, b) => b.similarityScore.compareTo(a.similarityScore));
+      return matches;
+    }
+
+    // 2. Fallback local contra activeLostPets
     final eligibleLostPets = activeLostPets
         .where((lost) => lost.petType == foundPet.petType && lost.id != foundPet.id)
         .toList();
@@ -299,32 +466,26 @@ class PetRecognitionRepository {
       return [];
     }
 
-    // 4. Carrega os perfis visuais dos pets perdidos candidatos em lote
     final lostIds = eligibleLostPets.map((p) => p.id).toList();
     final lostProfilesMap = await _supabaseService.getVisualProfilesByIds(lostIds);
 
-    final List<PetMatchCandidateEntity> matches = [];
-
-    // 5. Comparação 1:N direta entre o novo pet encontrado e os pets perdidos elegíveis
     for (final lostPet in eligibleLostPets) {
       final lostProfile = lostProfilesMap[lostPet.id];
       if (lostProfile == null) continue;
 
       final lostEmbedding = lostProfile.representativeEmbedding;
-      if (lostEmbedding == null || lostEmbedding.length != 768) continue;
+      if (lostEmbedding == null || !VectorMath.isValidEmbedding(lostEmbedding)) continue;
 
-      // Similaridade de cosseno direto entre as representações visuais únicas
       final similarity = VectorMath.cosineSimilarity(foundEmbedding, lostEmbedding);
 
       if (similarity >= minSimilarity) {
-        // Persiste no Supabase com a semântica canônica:
-        // lost_pet_id = ID do pet perdido, found_pet_id = ID do pet encontrado
         await _supabaseService.saveMatch(
           lostPetId: lostPet.id,
           foundPetId: foundPet.id,
           similarityScore: similarity,
           matchMethod: 'visual_single_vector',
           individualScores: [similarity],
+          origin: origin,
         );
 
         matches.add(
@@ -334,14 +495,12 @@ class PetRecognitionRepository {
             similarityScore: similarity,
             matchMethod: MatchMethod.visual,
             individualImageScores: [similarity],
-            matchingDetails:
-                'Correspondência visual automática por representação única.',
+            matchingDetails: 'Correspondência visual automática por representação única.',
           ),
         );
       }
     }
 
-    // 6. Ordena do maior score para o menor
     matches.sort((a, b) => b.similarityScore.compareTo(a.similarityScore));
 
     _logger.i('Matching automático concluído para o pet encontrado.', context: {

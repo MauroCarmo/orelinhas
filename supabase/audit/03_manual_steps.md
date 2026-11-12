@@ -79,17 +79,16 @@
      - **Eliminação de fallback de vetores do cliente:** O embedding de busca é recuperado **exclusivamente** de `public.pet_visual_profiles` para o animal do usuário autenticado.
      - Validação estrita de espécie no perfil e no alerta candidato, exigindo status `'active'`.
      - Utilização da sintaxe canônica do PostgreSQL para operadores qualificados: `OPERATOR(public.<=>)`.
-  6. **Funções de Autenticação Seguras:**
-     - `is_email_locked` e `register_login_attempt` configuradas com `SET search_path = ''`.
-     - `register_login_attempt` sanitiza e-mails, valida existência em `auth.users`, restringe resets a usuários autenticados e bloqueia após 3 falhas consecutivas (`INTERVAL '15 minutes'`).
-     - Uso de construções padrão ANSI SQL: `EXTRACT(epoch FROM ...)` e `COALESCE(...)`.
-  7. **Saneamento e Proteção de Embeddings via RLS:**
-     - Remoção da política pública permissiva em `profiles`.
+  6. **Preservação Absoluta de Auth/Login e Profiles:**
+     - As funções `is_email_locked`, `register_login_attempt` e `delete_own_user`, bem como a tabela `profiles` e seus triggers/políticas, **não são modificadas** pelo script incremental.
+     - Suas definições remotas originais permanecem 100% intocadas, garantindo zero risco de regressão no fluxo de login, cadastro, recuperação de senha e sessões de usuários.
+  7. **Saneamento e Proteção Definitiva de Embeddings e Matches via RLS e RPCs (D1 e D2 Resolvidos):**
      - `pet_images`: leitura e mutação restritas ao proprietário do animal (`pet_images_select_owner`), impedindo que terceiros baixem vetores brutos via API.
-     - `pet_visual_profiles`: leitura permitida a **todos os usuários autenticados** (trade-off deliberado — o pipeline de matching do Flutter lê perfis de outros usuários legitimamente via `getVisualProfile` e `getVisualProfilesByIds`; restringir ao dono quebraria o reconhecimento visual); mutação restrita ao titular.
-     - `matches`: leitura restrita exclusivamente aos proprietários envolvidos no par (`matches_select_involved_owner`); inserção e atualização restritas a quem possui ao menos um dos animais do par (`matches_insert_owner` e `matches_update_owner`). **Risco residual documentado:** a política INSERT com OR permite que o dono de um `lost_pet` associe-o a qualquer `found_pet_id` válido. Mitigação futura recomendada: mover `saveMatch` para RPC `SECURITY DEFINER`.
-     - `notifications`: remoção da política de inserção direta por clientes (mitigação de spoofing).
-     - Revogação explícita de qualquer acesso anônimo (`anon`) às tabelas de embeddings.
+     - `pet_visual_profiles` (**D1 RESOLVIDO**): política permissiva `USING (true)` eliminada. Leitura restrita exclusivamente ao proprietário do animal (`pet_visual_profiles_select_owner`). A busca e o matching de candidatos ocorrem no servidor via RPCs `SECURITY DEFINER`, que retornam apenas IDs e scores sem expor vetores SigLIP.
+     - `matches` (**D2 RESOLVIDO**): leitura restrita exclusivamente aos proprietários envolvidos no par (`matches_select_involved_owner`). As políticas permissivas de inserção e atualização direta (`matches_insert_owner`, `matches_update_owner`) foram **revogadas**. O cliente não tem mais permissão de escrita direta na tabela `matches`.
+     - **Nova RPC `save_match` (SECURITY DEFINER)**: toda persistência de correspondência passa por esta função, que valida autenticação (`auth.uid()`), existência, status ativo de ambos os alertas, compatibilidade estrita de espécie, titularidade do animal de origem e calcula a pontuação real a partir dos embeddings oficiais. Impede forjamento de score ou criação de matches arbitrários por terceiros.
+     - `notifications`: remoção da política de inserção direta por clientes (mitigação de spoofing). Trigger `trg_notify_on_match` permanece como única autoridade de notificação automática.
+     - Revogação explícita de qualquer acesso anônimo (`anon`) às tabelas de embeddings e matches.
   8. **Storage Defensivo:** Preserva buckets existentes com `ON CONFLICT (id) DO NOTHING` e define políticas RLS por pasta (`<userId>/...`).
 * **Critério de conclusão:** Execução do script sem mensagens de erro e exibição de:  
   `>>> [ORELINHAS] Script incremental concluído com sucesso e consolidado no banco remoto!`
@@ -156,7 +155,7 @@ SELECT
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public'
-  AND p.proname IN ('match_found_pets_for_lost', 'match_lost_pets_for_found', 'is_email_locked', 'register_login_attempt', 'delete_own_user')
+  AND p.proname IN ('match_found_pets_for_lost', 'match_lost_pets_for_found', 'calculate_match_score', 'save_match', 'is_email_locked', 'register_login_attempt', 'delete_own_user')
 ORDER BY function_name;
 
 -- 4. Inspeciona privilégios de execução efetivos concedidos por papel
@@ -166,7 +165,7 @@ SELECT
     privilege_type
 FROM information_schema.routine_privileges
 WHERE routine_schema = 'public'
-  AND routine_name IN ('match_found_pets_for_lost', 'match_lost_pets_for_found', 'delete_own_user', 'is_email_locked', 'register_login_attempt')
+  AND routine_name IN ('match_found_pets_for_lost', 'match_lost_pets_for_found', 'calculate_match_score', 'save_match', 'delete_own_user', 'is_email_locked', 'register_login_attempt')
 ORDER BY routine_name, grantee;
 
 -- 5. Inspeciona detalhadamente as políticas RLS (papéis, comandos, expressões USING e WITH CHECK)
@@ -217,7 +216,7 @@ ORDER BY event_object_table, trigger_name;
   2. Índices HNSW ativos com `vector_cosine_ops`.
   3. Funções críticas com `runtime_configurations = '{search_path=}'` e `is_security_definer = true`.
   4. Nenhuma permissão de execução concedida a `anon` ou `PUBLIC` em `match_*` e `delete_own_user`.
-  5. Políticas RLS ativas: `pet_images_select_owner` impedindo leitura pública de vetores; `profiles` com acesso restrito ao próprio ID; `notifications` sem política de INSERT de cliente; `matches_select_involved_owner` restringindo SELECT ao dono de `lost_pet_id` OU `found_pet_id`; `pet_visual_profiles_select_authenticated` com `USING (true)` — **comportamento esperado e documentado como trade-off arquitetural do pipeline de matching**.
+  5. Políticas RLS ativas: `pet_images_select_owner` impedindo leitura pública de vetores; `profiles` com acesso restrito ao próprio ID; `notifications` sem política de INSERT de cliente; `matches_select_involved_owner` restringindo SELECT ao dono de `lost_pet_id` OU `found_pet_id` (escrita direta vedada em `matches`, direcionada exclusivamente à RPC `save_match`); `pet_visual_profiles_select_owner` restringindo leitura de perfis visuais exclusivamente aos donos dos alertas (D1 e D2 resolvidos definitivamente no servidor).
   6. Trigger `trg_notify_on_match` vinculada a `matches` em eventos de `INSERT` e `UPDATE`.
 
 ---

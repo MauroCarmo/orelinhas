@@ -116,6 +116,13 @@ class PetFoundController extends AsyncNotifier<List<PetFoundAlertEntity>> {
       _logger.w('Envio concorrente ignorado em updateAlert.');
       return;
     }
+
+    final previousAlert = state.value?.firstWhere(
+      (a) => a.id == alert.id,
+      orElse: () => alert,
+    );
+    final imageChanged = previousAlert != null && previousAlert.imageUrl != alert.imageUrl;
+
     state = const AsyncLoading();
     try {
       await _repository.updateAlert(user.id, alert);
@@ -125,6 +132,30 @@ class PetFoundController extends AsyncNotifier<List<PetFoundAlertEntity>> {
       // Invalida o feed público para atualizar lá também
       ref.invalidate(publicPetFoundControllerProvider);
       _logger.i('Alerta atualizado com sucesso no controller.', context: {'alertId': alert.id});
+
+      // Se a imagem mudou e há URL válida, reprocessa embeddings em background
+      if (imageChanged && alert.imageUrl.isNotEmpty) {
+        final recognitionRepo = ref.read(petRecognitionRepositoryProvider);
+        final petLostRepo = ref.read(petLostRepositoryProvider);
+
+        recognitionRepo.processPetImages(
+          petId: alert.id,
+          petType: alert.petType,
+          imageUrls: [alert.imageUrl],
+        ).then((foundVisualProfile) async {
+          final activeLostPets = await petLostRepo.getPublicAlerts(
+            limit: 50,
+            petType: alert.petType,
+          );
+          await recognitionRepo.matchFoundPetAgainstLostPets(
+            foundPet: alert,
+            foundVisualProfile: foundVisualProfile,
+            activeLostPets: activeLostPets,
+          );
+        }).catchError((e) {
+          _logger.w('Reprocessamento de IA ao atualizar alerta encontrado falhou.', error: e);
+        });
+      }
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
       _logger.e('Erro ao atualizar alerta no PetFoundController.', error: appException, stackTrace: st, context: {'alertId': alert.id});

@@ -4,35 +4,35 @@ import '../../../pet_lost/domain/pet_lost_entity.dart';
 import '../../data/repositories/pet_recognition_repository.dart';
 import '../../domain/models/pet_match_candidate_entity.dart';
 import '../../domain/models/pet_visual_profile_entity.dart';
+import '../../domain/utils/recognition_config.dart';
 
 /// Estado da busca de correspondências.
 class PetMatchState {
   final bool isLoading;
+  final List<PetMatchCandidateEntity> allMatches;
   final List<PetMatchCandidateEntity> matches;
-  final double minSimilarityThreshold;
   final String? errorMessage;
   final PetVisualProfileEntity? queryVisualProfile;
 
   const PetMatchState({
     this.isLoading = false,
+    this.allMatches = const [],
     this.matches = const [],
-    this.minSimilarityThreshold = 0.70,
     this.errorMessage,
     this.queryVisualProfile,
   });
 
   PetMatchState copyWith({
     bool? isLoading,
+    List<PetMatchCandidateEntity>? allMatches,
     List<PetMatchCandidateEntity>? matches,
-    double? minSimilarityThreshold,
     String? errorMessage,
     PetVisualProfileEntity? queryVisualProfile,
   }) {
     return PetMatchState(
       isLoading: isLoading ?? this.isLoading,
+      allMatches: allMatches ?? this.allMatches,
       matches: matches ?? this.matches,
-      minSimilarityThreshold:
-          minSimilarityThreshold ?? this.minSimilarityThreshold,
       errorMessage: errorMessage,
       queryVisualProfile: queryVisualProfile ?? this.queryVisualProfile,
     );
@@ -55,56 +55,82 @@ class PetMatchController extends Notifier<PetMatchState> {
     return const PetMatchState();
   }
 
-  /// Executa a busca em duas etapas de possíveis correspondências para o pet fornecido.
-  Future<void> findMatchesForPet({
+  /// Carrega as correspondências já persistidas no Supabase para o pet sem recalcular IA.
+  Future<void> loadPersistedMatches(PetLostAlertEntity pet) async {
+    _logger.i('Carregando matches persistidos do pet.', context: {'petId': pet.id});
+    state = state.copyWith(isLoading: true, errorMessage: null);
+
+    try {
+      final visualProfile = await _repository.getVisualProfile(pet.id);
+      final persisted = await _repository.getPersistedMatchesForLostPet(
+        pet.id,
+        minSimilarity: RecognitionConfig.kSimilarityThreshold,
+      );
+
+      final filtered = persisted
+          .where((m) => m.similarityScore >= RecognitionConfig.kSimilarityThreshold)
+          .toList();
+
+      state = state.copyWith(
+        isLoading: false,
+        allMatches: persisted,
+        matches: filtered,
+        queryVisualProfile: visualProfile,
+      );
+    } catch (e, st) {
+      _logger.e('Erro ao carregar matches persistidos.', error: e, stackTrace: st);
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Não foi possível carregar as correspondências.',
+      );
+    }
+  }
+
+  /// Executa nova busca ativa/manual no backend (origin = 'manual', sem disparar notificações).
+  Future<void> runNewSearch({
     required PetLostAlertEntity pet,
-    double? customThreshold,
   }) async {
-    final threshold = customThreshold ?? state.minSimilarityThreshold;
-    _logger.i('Executando busca de matches para o pet.', context: {
+    _logger.i('Executando nova busca manual de matches para o pet.', context: {
       'petId': pet.id,
       'petType': pet.petType.name,
-      'threshold': threshold,
     });
 
     state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {
-      // 1. Carrega o perfil visual da query se for cão/gato
       PetVisualProfileEntity? visualProfile;
       if (pet.petType == PetType.dog || pet.petType == PetType.cat) {
         visualProfile = await _repository.getVisualProfile(pet.id);
       }
 
-      // 2. Executa busca em duas etapas (recuperação + refinamento)
       final results = await _repository.findMatches(
         queryPet: pet,
         queryVisualProfile: visualProfile,
-        minSimilarity: threshold,
+        minSimilarity: RecognitionConfig.kSimilarityThreshold,
+        origin: 'manual',
       );
+
+      final filtered = results
+          .where((m) => m.similarityScore >= RecognitionConfig.kSimilarityThreshold)
+          .toList();
 
       state = state.copyWith(
         isLoading: false,
-        matches: results,
+        allMatches: results,
+        matches: filtered,
         queryVisualProfile: visualProfile,
-        minSimilarityThreshold: threshold,
       );
 
-      _logger.i('Busca de matches concluída.', context: {
+      _logger.i('Busca manual de matches concluída.', context: {
         'petId': pet.id,
         'matchesFound': results.length,
       });
     } catch (e, st) {
-      _logger.e('Erro ao buscar matches para o pet.', error: e, stackTrace: st);
+      _logger.e('Erro ao buscar matches manualmente.', error: e, stackTrace: st);
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Não foi possível buscar correspondências no momento.',
       );
     }
-  }
-
-  /// Atualiza o limiar experimental de similaridade e reordena/refiltra os resultados.
-  void updateThreshold(PetLostAlertEntity pet, double newThreshold) {
-    findMatchesForPet(pet: pet, customThreshold: newThreshold);
   }
 }

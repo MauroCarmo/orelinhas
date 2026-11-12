@@ -192,7 +192,9 @@ class AiVisionService {
       List<double>? embedding;
       if (embeddingRaw != null && embeddingRaw.length == 768) {
         final rawDoubles = embeddingRaw.map((e) => (e as num).toDouble()).toList();
-        embedding = VectorMath.l2Normalize(rawDoubles);
+        if (rawDoubles.every((v) => v.isFinite)) {
+          embedding = VectorMath.l2Normalize(rawDoubles);
+        }
       }
 
       final chosenBox = selectedBox ?? (detections.isNotEmpty ? detections.first : null);

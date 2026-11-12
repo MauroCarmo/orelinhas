@@ -86,6 +86,7 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
           recognitionRepo.findMatches(
             queryPet: createdAlert,
             queryVisualProfile: visualProfile,
+            origin: 'automatic',
           );
         }).catchError((e) {
           _logger.w('Processamento de IA em background falhou suavemente.', error: e);
@@ -107,6 +108,13 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
       _logger.w('Envio concorrente ignorado em updateAlert.');
       return;
     }
+
+    final previousAlert = state.value?.firstWhere(
+      (a) => a.id == alert.id,
+      orElse: () => alert,
+    );
+    final imageChanged = previousAlert != null && previousAlert.imageUrl != alert.imageUrl;
+
     state = const AsyncLoading();
     try {
       await _repository.updateAlert(user.id, alert);
@@ -116,6 +124,24 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
       // Invalida o feed público para atualizar lá também
       ref.invalidate(publicPetLostControllerProvider);
       _logger.i('Alerta atualizado com sucesso no controller.', context: {'alertId': alert.id});
+
+      // Se a imagem mudou e há URL válida, reprocessa embeddings em background
+      if (imageChanged && alert.imageUrl != null && alert.imageUrl!.isNotEmpty) {
+        final recognitionRepo = ref.read(petRecognitionRepositoryProvider);
+        recognitionRepo.processPetImages(
+          petId: alert.id,
+          petType: alert.petType,
+          imageUrls: [alert.imageUrl!],
+        ).then((visualProfile) {
+          recognitionRepo.findMatches(
+            queryPet: alert,
+            queryVisualProfile: visualProfile,
+            origin: 'automatic',
+          );
+        }).catchError((e) {
+          _logger.w('Reprocessamento de IA ao atualizar alerta falhou suavemente.', error: e);
+        });
+      }
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
       _logger.e('Erro ao atualizar alerta no PetLostController.', error: appException, stackTrace: st, context: {'alertId': alert.id});

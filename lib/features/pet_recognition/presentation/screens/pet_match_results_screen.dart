@@ -64,7 +64,8 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       setState(() {
         _targetPet = pet;
       });
-      ref.read(petMatchControllerProvider.notifier).findMatchesForPet(pet: pet);
+      // Carrega correspondências persistidas sem recalcular IA
+      ref.read(petMatchControllerProvider.notifier).loadPersistedMatches(pet);
     }
   }
 
@@ -109,8 +110,8 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                   if (_targetPet != null) _buildQueryPetCard(_targetPet!),
                   const SizedBox(height: 16),
 
-                  // Controle de limiar experimental de similaridade
-                  _buildThresholdFilter(matchState),
+                  // Botão de nova busca manual (threshold fixo em 70% — controlado pelo servidor)
+                  _buildNewSearchButton(matchState),
                   const SizedBox(height: 16),
 
                   // Aviso de responsabilidade humana
@@ -232,50 +233,19 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
     );
   }
 
-  Widget _buildThresholdFilter(PetMatchState state) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Sensibilidade da Busca',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-              Text(
-                'Mínimo: ${(state.minSimilarityThreshold * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          Slider(
-            value: state.minSimilarityThreshold.clamp(0.50, 0.90),
-            min: 0.50,
-            max: 0.90,
-            divisions: 8,
-            activeColor: AppColors.primary,
-            label: '${(state.minSimilarityThreshold.clamp(0.50, 0.90) * 100).toStringAsFixed(0)}%',
-            onChangeEnd: (val) {
-              if (_targetPet != null) {
+  Widget _buildNewSearchButton(PetMatchState state) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.refresh, size: 18),
+        label: const Text('Executar Nova Busca Ativa'),
+        onPressed: state.isLoading || _targetPet == null
+            ? null
+            : () {
                 ref
                     .read(petMatchControllerProvider.notifier)
-                    .updateThreshold(_targetPet!, val);
-              }
-            },
-            onChanged: (_) {},
-          ),
-        ],
+                    .runNewSearch(pet: _targetPet!);
+              },
       ),
     );
   }
@@ -324,7 +294,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Tente diminuir a sensibilidade no controle acima ou aguarde novos cadastros na rede.',
+            'Aguarde novos cadastros na rede ou execute uma nova busca mais tarde.',
             style: TextStyle(color: Colors.black54, fontSize: 12),
             textAlign: TextAlign.center,
           ),
