@@ -7,12 +7,28 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
+import '../../../../core/formatters/cep_input_formatter.dart';
 import '../../../../core/formatters/phone_input_formatter.dart';
+import '../../../../core/services/geocoding_service.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/services/viacep_service.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
+import '../../../../core/theme/widgets/app_input_decoration.dart';
+import '../../../../core/validation/sanitizers.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
+import '../../../pet_lost/domain/pet_lost_entity.dart' show PetType;
+import '../../../pet_recognition/data/services/supabase_pet_recognition_service.dart';
 import '../controllers/pet_found_controller.dart';
 import '../../domain/pet_found_entity.dart';
-import '../../../pet_lost/domain/pet_lost_entity.dart' show PetType;
+
+class _SelectedPhotoItem {
+  final Uint8List? bytes;
+  final String? fileName;
+  final String? existingUrl;
+
+  const _SelectedPhotoItem({this.bytes, this.fileName, this.existingUrl});
+}
 
 class CreatePetFoundScreen extends ConsumerStatefulWidget {
   final String? alertId;
@@ -25,26 +41,61 @@ class CreatePetFoundScreen extends ConsumerStatefulWidget {
 }
 
 class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
+  static const int _maxPhotos = 3;
+
+  static const List<String> _brazilStates = [
+    'AC',
+    'AL',
+    'AP',
+    'AM',
+    'BA',
+    'CE',
+    'DF',
+    'ES',
+    'GO',
+    'MA',
+    'MT',
+    'MS',
+    'MG',
+    'PA',
+    'PB',
+    'PR',
+    'PE',
+    'PI',
+    'RJ',
+    'RN',
+    'RS',
+    'RO',
+    'RR',
+    'SC',
+    'SP',
+    'SE',
+    'TO',
+  ];
+
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _breedController;
   late TextEditingController _apparentAgeController;
   late TextEditingController _descriptionController;
-  late TextEditingController _foundLocationController;
+  late TextEditingController _cepController;
+  late TextEditingController _streetController;
+  late TextEditingController _districtController;
+  late TextEditingController _cityController;
+  late TextEditingController _referenceController;
   late TextEditingController _contactController;
 
   PetType _selectedType = PetType.dog;
+  String? _selectedState;
   DateTime _selectedDate = DateTime.now();
   bool _controllersInitialized = false;
+  bool _isSyncingLocation = false;
+  bool _isUploadingPhotos = false;
 
-  // Coordenadas selecionadas no mapa
   LatLng? _selectedLocation;
   final MapController _mapController = MapController();
 
-  // Imagem (compatível com mobile e web)
-  Uint8List? _selectedImageBytes;
-  String? _selectedImageFileName; // Nome original do arquivo
-  String? _existingImageUrl; // URL carregada ao editar
+  final List<_SelectedPhotoItem> _photos = [];
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -53,7 +104,11 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     _breedController = TextEditingController();
     _apparentAgeController = TextEditingController();
     _descriptionController = TextEditingController();
-    _foundLocationController = TextEditingController();
+    _cepController = TextEditingController();
+    _streetController = TextEditingController();
+    _districtController = TextEditingController();
+    _cityController = TextEditingController();
+    _referenceController = TextEditingController();
     _contactController = TextEditingController();
   }
 
@@ -62,43 +117,294 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     _breedController.dispose();
     _apparentAgeController.dispose();
     _descriptionController.dispose();
-    _foundLocationController.dispose();
+    _cepController.dispose();
+    _streetController.dispose();
+    _districtController.dispose();
+    _cityController.dispose();
+    _referenceController.dispose();
     _contactController.dispose();
     _mapController.dispose();
     super.dispose();
   }
 
   void _initializeControllers(PetFoundAlertEntity alert) {
-    if (!_controllersInitialized) {
-      _selectedType = alert.petType;
-      _breedController.text = alert.breed ?? '';
-      _apparentAgeController.text = alert.apparentAge ?? '';
-      _descriptionController.text = alert.description;
-      _foundLocationController.text = alert.foundLocation;
-      _selectedDate = alert.foundDate;
-      _existingImageUrl = alert.imageUrl;
+    if (_controllersInitialized) return;
+    _controllersInitialized = true;
 
-      if (alert.latitude != null && alert.longitude != null) {
-        _selectedLocation = LatLng(alert.latitude!, alert.longitude!);
-        _mapController.move(_selectedLocation!, 15.0);
-      }
+    _selectedType = alert.petType;
+    _breedController.text = alert.breed ?? '';
+    _apparentAgeController.text = alert.apparentAge ?? '';
+    _descriptionController.text =
+        alert.description == 'Sem descrição adicional.'
+        ? ''
+        : alert.description;
+    _selectedDate = alert.foundDate;
 
-      final rawPhone = alert.contact ?? '';
-      if (rawPhone.length >= 10) {
-        final ddd = rawPhone.substring(0, 2);
-        if (rawPhone.length == 11) {
-          _contactController.text =
-              '($ddd) ${rawPhone.substring(2, 7)}-${rawPhone.substring(7)}';
-        } else {
-          _contactController.text =
-              '($ddd) ${rawPhone.substring(2, 6)}-${rawPhone.substring(6)}';
-        }
-      } else {
-        _contactController.text = rawPhone;
-      }
+    _parseExistingLocation(alert.foundLocation);
 
-      _controllersInitialized = true;
+    final rawPhone = alert.contact ?? '';
+    var digits = AppSanitizers.digitsOnly(rawPhone);
+    if (digits.startsWith('55') &&
+        (digits.length == 12 || digits.length == 13)) {
+      digits = digits.substring(2);
     }
+    if (digits.length == 11) {
+      _contactController.text =
+          '(${digits.substring(0, 2)}) ${digits.substring(2, 7)}-${digits.substring(7)}';
+    } else if (digits.length == 10) {
+      _contactController.text =
+          '(${digits.substring(0, 2)}) ${digits.substring(2, 6)}-${digits.substring(6)}';
+    } else {
+      _contactController.text = rawPhone;
+    }
+
+    _photos.clear();
+    for (final url in alert.effectiveImageUrls) {
+      _photos.add(_SelectedPhotoItem(existingUrl: url));
+    }
+
+    if (alert.latitude != null && alert.longitude != null) {
+      _selectedLocation = LatLng(alert.latitude!, alert.longitude!);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _selectedLocation != null) {
+          _mapController.move(_selectedLocation!, 15.0);
+        }
+      });
+    }
+
+    if (alert.id.isNotEmpty) {
+      ref
+          .read(supabasePetRecognitionServiceProvider)
+          .getPetImageUrls(alert.id)
+          .then((persistedUrls) {
+            if (!mounted || persistedUrls.isEmpty) return;
+
+            final merged = <String>[
+              ...alert.effectiveImageUrls,
+              for (final u in persistedUrls)
+                if (!alert.effectiveImageUrls.contains(u)) u,
+            ].take(_maxPhotos).toList();
+
+            if (merged.length > _photos.length) {
+              setState(() {
+                _photos
+                  ..clear()
+                  ..addAll(
+                    merged.map((url) => _SelectedPhotoItem(existingUrl: url)),
+                  );
+              });
+            }
+          });
+    }
+  }
+
+  void _parseExistingLocation(String rawLocation) {
+    final trimmed = rawLocation.trim();
+    if (trimmed.isEmpty) return;
+
+    if (trimmed.contains('Cidade/UF:') || trimmed.contains(' | ')) {
+      for (final part in trimmed.split(' | ')) {
+        final item = part.trim();
+        if (item.startsWith('Rua:')) {
+          _streetController.text = item.substring(4).trim();
+        } else if (item.startsWith('Bairro:')) {
+          _districtController.text = item.substring(7).trim();
+        } else if (item.startsWith('Cidade/UF:')) {
+          final cityUf = item.substring(10).trim();
+          final slashIdx = cityUf.lastIndexOf('/');
+          if (slashIdx != -1) {
+            _cityController.text = cityUf.substring(0, slashIdx).trim();
+            final uf = cityUf.substring(slashIdx + 1).trim().toUpperCase();
+            if (_brazilStates.contains(uf)) _selectedState = uf;
+          } else if (_brazilStates.contains(cityUf.toUpperCase())) {
+            _selectedState = cityUf.toUpperCase();
+          } else {
+            _cityController.text = cityUf;
+          }
+        } else if (item.startsWith('CEP:')) {
+          final digits = AppSanitizers.digitsOnly(item.substring(4));
+          if (digits.length == 8) {
+            _cepController.text =
+                '${digits.substring(0, 5)}-${digits.substring(5)}';
+          }
+        } else if (item.startsWith('Ref:')) {
+          _referenceController.text = item.substring(4).trim();
+        }
+      }
+      return;
+    }
+
+    if (_brazilStates.contains(trimmed.toUpperCase())) {
+      _selectedState = trimmed.toUpperCase();
+    } else {
+      _referenceController.text = trimmed;
+    }
+  }
+
+  Future<void> _lookupCepAndSyncMap([String? value]) async {
+    final digits = AppSanitizers.digitsOnly(value ?? _cepController.text);
+    if (digits.length != 8 || _isSyncingLocation) return;
+
+    setState(() => _isSyncingLocation = true);
+    try {
+      final viaCep = ref.read(viaCepServiceProvider);
+      final geocoding = ref.read(geocodingServiceProvider);
+
+      final data = await viaCep.fetchAddress(digits);
+      if (!mounted) return;
+
+      final street = data['street'] ?? '';
+      final district = data['district'] ?? '';
+      final city = data['city'] ?? '';
+      final uf = (data['state'] ?? '').toUpperCase();
+
+      setState(() {
+        if (street.isNotEmpty) _streetController.text = street;
+        if (district.isNotEmpty) _districtController.text = district;
+        if (city.isNotEmpty) _cityController.text = city;
+        if (_brazilStates.contains(uf)) _selectedState = uf;
+      });
+
+      final coords = await geocoding.forwardGeocode(
+        street: street,
+        district: district,
+        city: city,
+        stateUf: uf,
+        cep: digits,
+      );
+
+      if (!mounted) return;
+      if (coords != null) {
+        setState(() {
+          _selectedLocation = coords;
+        });
+        _mapController.move(coords, 16.0);
+      }
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingLocation = false);
+      }
+    }
+  }
+
+  Future<void> _syncMapFromAddressFields() async {
+    if (_isSyncingLocation) return;
+
+    final street = _streetController.text.trim();
+    final district = _districtController.text.trim();
+    final city = _cityController.text.trim();
+    final uf = _selectedState ?? '';
+    final cep = _cepController.text.trim();
+
+    if (street.isEmpty && city.isEmpty && cep.isEmpty) {
+      _showErrorDialog(context, [
+        'Preencha ao menos o CEP, ou Cidade/Rua para localizar no mapa.',
+      ]);
+      return;
+    }
+
+    setState(() => _isSyncingLocation = true);
+    try {
+      final geocoding = ref.read(geocodingServiceProvider);
+      final coords = await geocoding.forwardGeocode(
+        street: street,
+        district: district,
+        city: city,
+        stateUf: uf,
+        cep: cep,
+      );
+
+      if (!mounted) return;
+      if (coords != null) {
+        setState(() {
+          _selectedLocation = coords;
+        });
+        _mapController.move(coords, 16.0);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Não foi possível localizar esse endereço no mapa. Você pode marcar manualmente.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingLocation = false);
+      }
+    }
+  }
+
+  Future<void> _syncAddressFromCoordinates(LatLng point) async {
+    setState(() {
+      _selectedLocation = point;
+      _isSyncingLocation = true;
+    });
+
+    try {
+      final geocoding = ref.read(geocodingServiceProvider);
+      final result = await geocoding.reverseGeocode(point);
+      if (!mounted || result == null) return;
+
+      setState(() {
+        if (result.cep != null && result.cep!.isNotEmpty) {
+          _cepController.text = result.cep!;
+        }
+        if (result.street != null && result.street!.isNotEmpty) {
+          _streetController.text = result.street!;
+        }
+        if (result.district != null && result.district!.isNotEmpty) {
+          _districtController.text = result.district!;
+        }
+        if (result.city != null && result.city!.isNotEmpty) {
+          _cityController.text = result.city!;
+        }
+        if (result.stateUf != null && _brazilStates.contains(result.stateUf)) {
+          _selectedState = result.stateUf;
+        }
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingLocation = false);
+      }
+    }
+  }
+
+  String _composeFullLocation() {
+    final street = _streetController.text.trim();
+    final district = _districtController.text.trim();
+    final city = _cityController.text.trim();
+    final state = (_selectedState ?? '').trim();
+    final reference = _referenceController.text.trim();
+    final cepDigits = AppSanitizers.digitsOnly(_cepController.text);
+
+    final parts = <String>[];
+    if (street.isNotEmpty) parts.add('Rua: $street');
+    if (district.isNotEmpty) parts.add('Bairro: $district');
+
+    final cityState = [
+      if (city.isNotEmpty) city,
+      if (state.isNotEmpty) state,
+    ].join('/');
+    if (cityState.isNotEmpty) {
+      parts.add('Cidade/UF: $cityState');
+    }
+
+    if (cepDigits.length == 8) {
+      parts.add('CEP: ${cepDigits.substring(0, 5)}-${cepDigits.substring(5)}');
+    }
+
+    if (reference.isNotEmpty) {
+      parts.add('Ref: $reference');
+    }
+
+    return parts.join(' | ');
   }
 
   String _formatDate(DateTime date) {
@@ -114,6 +420,18 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: AppColors.accent,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && picked != _selectedDate) {
       setState(() {
@@ -126,11 +444,12 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Row(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
-            SizedBox(width: 8),
-            Text('Erros de Validação'),
+            const Icon(Icons.warning_amber_rounded, color: AppColors.error),
+            const SizedBox(width: 8),
+            Text('Erros de Validação', style: AppTextStyles.heading3()),
           ],
         ),
         content: SingleChildScrollView(
@@ -148,7 +467,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
                           '• ',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Expanded(child: Text(err)),
+                        Expanded(child: Text(err, style: AppTextStyles.body())),
                       ],
                     ),
                   ),
@@ -157,7 +476,8 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
           ),
         ),
         actions: [
-          TextButton(
+          ElevatedButton(
+            style: AppButtonStyles.primary(),
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Entendido'),
           ),
@@ -195,10 +515,9 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       );
 
       if (!mounted) return;
-      setState(() {
-        _selectedLocation = LatLng(position.latitude, position.longitude);
-        _mapController.move(_selectedLocation!, 15.0);
-      });
+      final point = LatLng(position.latitude, position.longitude);
+      _mapController.move(point, 16.0);
+      await _syncAddressFromCoordinates(point);
     } catch (e) {
       if (!mounted) return;
       _showErrorDialog(context, [
@@ -208,56 +527,92 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
+    final remaining = _maxPhotos - _photos.length;
+    if (remaining <= 0) {
+      _showErrorDialog(context, [
+        'Você já selecionou o máximo de $_maxPhotos fotos.',
+      ]);
+      return;
+    }
+
     try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        imageQuality: 85,
-      );
-      if (image != null) {
-        final bytes = await image.readAsBytes();
+      if (source == ImageSource.gallery && remaining > 1) {
+        final List<XFile> images = await _picker.pickMultiImage(
+          imageQuality: 85,
+          limit: remaining,
+        );
+        if (images.isEmpty) return;
+
+        final added = <_SelectedPhotoItem>[];
+        for (final img in images.take(remaining)) {
+          final bytes = await img.readAsBytes();
+          added.add(_SelectedPhotoItem(bytes: bytes, fileName: img.name));
+        }
+
         if (!mounted) return;
         setState(() {
-          _selectedImageBytes = bytes;
-          _selectedImageFileName = image.name;
-          _existingImageUrl = null;
+          _photos.addAll(added);
         });
+      } else {
+        final XFile? image = await _picker.pickImage(
+          source: source,
+          imageQuality: 85,
+          preferredCameraDevice: CameraDevice.rear,
+        );
+        if (image != null) {
+          final bytes = await image.readAsBytes();
+          if (!mounted) return;
+          setState(() {
+            _photos.add(_SelectedPhotoItem(bytes: bytes, fileName: image.name));
+          });
+        }
       }
     } catch (e) {
       if (!mounted) return;
-      _showErrorDialog(context, ['Erro ao selecionar imagem.']);
+      _showErrorDialog(context, [
+        'Não foi possível acessar a câmera ou galeria.',
+      ]);
     }
   }
 
-  Future<String?> _uploadImageIfNeeded() async {
-    if (_selectedImageBytes == null &&
-        _existingImageUrl != null &&
-        _existingImageUrl!.isNotEmpty) {
-      return _existingImageUrl;
-    }
-
-    if (_selectedImageBytes == null) {
-      return null;
-    }
+  Future<List<String>?> _uploadAllPhotos() async {
+    if (_photos.isEmpty) return null;
 
     final user = ref.read(currentUserProvider);
     final storageService = ref.read(storageServiceProvider);
+    final uploadedUrls = <String>[];
 
+    setState(() => _isUploadingPhotos = true);
     try {
-      final url = await storageService.uploadImage(
-        bytes: _selectedImageBytes!,
-        fileName: _selectedImageFileName ?? 'image.jpg',
-        bucket: 'pet_images',
-        folder: user?.id,
-      );
-      return url;
+      for (int i = 0; i < _photos.length; i++) {
+        final item = _photos[i];
+        if (item.existingUrl != null && item.existingUrl!.isNotEmpty) {
+          uploadedUrls.add(item.existingUrl!);
+        } else if (item.bytes != null) {
+          final url = await storageService.uploadImage(
+            bytes: item.bytes!,
+            fileName: item.fileName ?? 'pet_found_${i + 1}.jpg',
+            bucket: 'pet_images',
+            folder: user?.id,
+          );
+          uploadedUrls.add(url);
+        }
+      }
+      return uploadedUrls;
     } on ValidationException catch (e) {
       if (!mounted) return null;
       _showErrorDialog(context, [e.message]);
       return null;
     } catch (e) {
       if (!mounted) return null;
-      _showErrorDialog(context, ['Falha ao enviar imagem. Tente novamente.']);
+      _showErrorDialog(context, [
+        'Falha ao enviar uma ou mais fotos. Tente novamente.',
+      ]);
       return null;
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingPhotos = false);
+      }
     }
   }
 
@@ -267,36 +622,51 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Usuário não autenticado.'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         ),
       );
       return;
     }
 
-    // Validação prévia: imagem obrigatória
-    if (_selectedImageBytes == null &&
-        (_existingImageUrl == null || _existingImageUrl!.isEmpty)) {
-      _showErrorDialog(context, ['A foto do pet é obrigatória.']);
+    final preErrors = <String>[];
+    if (_cityController.text.trim().isEmpty) {
+      preErrors.add('A Cidade é obrigatória.');
+    }
+    if (_selectedState == null || _selectedState!.isEmpty) {
+      preErrors.add('O Estado (UF) é obrigatório.');
+    }
+    if (_photos.isEmpty) {
+      preErrors.add('Pelo menos 1 foto do pet é obrigatória.');
+    }
+    if (preErrors.isNotEmpty) {
+      _showErrorDialog(context, preErrors);
       return;
     }
 
-    final imageUrl = await _uploadImageIfNeeded();
+    final uploadedUrls = await _uploadAllPhotos();
     if (!mounted) return;
-    if (imageUrl == null) {
+    if (uploadedUrls == null || uploadedUrls.isEmpty) {
       return;
     }
+
+    final fullLocation = _composeFullLocation();
 
     final tempEntity = PetFoundAlertEntity(
       id: widget.alertId ?? '',
       userId: user.id,
       petType: _selectedType,
-      breed: _breedController.text.isNotEmpty ? _breedController.text : null,
-      apparentAge: _apparentAgeController.text.isNotEmpty ? _apparentAgeController.text : null,
+      breed: _breedController.text.trim().isNotEmpty
+          ? _breedController.text.trim()
+          : null,
+      apparentAge: _apparentAgeController.text.trim().isNotEmpty
+          ? _apparentAgeController.text.trim()
+          : null,
       description: _descriptionController.text,
-      foundLocation: _foundLocationController.text,
+      foundLocation: fullLocation,
       foundDate: _selectedDate,
-      contact: _contactController.text.isNotEmpty ? _contactController.text : null,
-      imageUrl: imageUrl,
+      contact: _contactController.text,
+      imageUrl: uploadedUrls.first,
+      imageUrls: uploadedUrls,
       latitude: _selectedLocation?.latitude,
       longitude: _selectedLocation?.longitude,
     );
@@ -330,7 +700,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
                     ? 'Registro atualizado com sucesso!'
                     : 'Pet Encontrado cadastrado com sucesso!',
               ),
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.success,
             ),
           );
           context.pop();
@@ -340,7 +710,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
               ? err.message
               : 'Erro ao salvar registro.';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
+            SnackBar(content: Text(errMsg), backgroundColor: AppColors.error),
           );
         }
       },
@@ -358,16 +728,25 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       );
     }
 
-    final isLoading = controllerState.isLoading;
+    final isLoading = controllerState.isLoading || _isUploadingPhotos;
 
     return Scaffold(
+      backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
         title: Text(
-          widget.alertId != null ? 'Editar Registro' : 'Cadastrar Pet Encontrado',
+          widget.alertId != null
+              ? 'Editar Pet Encontrado'
+              : 'Cadastrar Pet Encontrado',
+          style: AppTextStyles.heading2(color: Colors.white),
         ),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
       ),
       body: isLoading && !_controllersInitialized && widget.alertId != null
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Form(
@@ -375,243 +754,476 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'Informações do Pet',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<PetType>(
-                      initialValue: _selectedType,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo do Pet *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: PetType.dog,
-                          child: Text('Cachorro'),
-                        ),
-                        DropdownMenuItem(
-                          value: PetType.cat,
-                          child: Text('Gato'),
-                        ),
-                        DropdownMenuItem(
-                          value: PetType.other,
-                          child: Text('Outro'),
-                        ),
-                      ],
-                      onChanged: isLoading
-                          ? null
-                          : (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedType = val;
-                                });
-                              }
-                            },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _breedController,
-                      decoration: const InputDecoration(
-                        labelText: 'Raça do Pet (Opcional)',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.pets),
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _apparentAgeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Parece ter qual idade? (Opcional)',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.hourglass_empty),
-                        helperText: 'Ex: filhote, idoso, uns 2 anos',
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    const Divider(),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Detalhes do Encontro',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Detalhes de onde foi encontrado e como ele estava *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.description),
-                        helperText: 'Mínimo de 10 caracteres, máximo 255.',
-                      ),
-                      maxLines: 3,
-                      maxLength: 255,
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _foundLocationController,
-                      decoration: const InputDecoration(
-                        labelText: 'Último local que você o viu *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.location_on),
-                        helperText: 'Ex: Próximo ao supermercado Y',
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    InkWell(
-                      onTap: isLoading ? null : () => _selectDate(context),
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Data em que foi encontrado *',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.calendar_month),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(_formatDate(_selectedDate)),
-                            const Icon(Icons.arrow_drop_down),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _contactController,
-                      decoration: const InputDecoration(
-                        labelText: 'Telefone de Contato (Opcional)',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.phone),
-                        helperText: 'Ex: (11) 99999-9999',
-                      ),
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [PhoneInputFormatter()],
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Seção de imagem (obrigatória)
-                    const Text(
-                      'Foto do Pet *',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildImagePicker(isLoading),
-                    const SizedBox(height: 16),
-
-                    // Localização no mapa
-                    const Text(
-                      'Localização Exata de Onde Encontrou o Pet *',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.my_location),
-                      label: const Text('Usar minha localização atual'),
-                      onPressed: isLoading ? null : _useCurrentLocation,
-                    ),
-                    const SizedBox(height: 8),
+                    // --- Seção 1: Informações do Pet ---
                     Text(
-                      _selectedLocation == null
-                          ? 'Nenhuma localização selecionada.'
-                          : 'Selecionado: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
+                      'INFORMAÇÕES DO PET ENCONTRADO',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          DropdownButtonFormField<PetType>(
+                            initialValue: _selectedType,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Tipo do Pet *',
+                              prefixIcon: const Icon(
+                                Icons.category_outlined,
+                                size: 20,
+                              ),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: PetType.dog,
+                                child: Text('Cachorro'),
+                              ),
+                              DropdownMenuItem(
+                                value: PetType.cat,
+                                child: Text('Gato'),
+                              ),
+                              DropdownMenuItem(
+                                value: PetType.other,
+                                child: Text('Outro'),
+                              ),
+                            ],
+                            onChanged: isLoading
+                                ? null
+                                : (val) {
+                                    if (val != null) {
+                                      setState(() {
+                                        _selectedType = val;
+                                      });
+                                    }
+                                  },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _breedController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Raça Aparente (Opcional)',
+                              prefixIcon: const Icon(
+                                Icons.cruelty_free_outlined,
+                                size: 20,
+                              ),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _apparentAgeController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Idade Aparente (Opcional)',
+                              helperText: 'Ex: filhote, adulto, idoso',
+                              prefixIcon: const Icon(
+                                Icons.hourglass_empty_outlined,
+                                size: 20,
+                              ),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 300,
-                      child: FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter:
-                              _selectedLocation ??
-                              const LatLng(-23.5505, -46.6333),
-                          initialZoom: 15.0,
-                          onTap: (tapPosition, point) {
-                            setState(() {
-                              _selectedLocation = point;
-                            });
-                          },
-                        ),
+                    const SizedBox(height: 24),
+
+                    // --- Seção 2: Detalhes do Encontro & Endereço Sincronizado ---
+                    Text(
+                      'DETALHES DO ENCONTRO',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.example.app',
+                          TextFormField(
+                            controller: _descriptionController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText:
+                                  'Descrição / Características (Opcional)',
+                              helperText:
+                                  'Cor, coleira, estado do animal, comportamento, etc.',
+                              prefixIcon: const Icon(
+                                Icons.notes_outlined,
+                                size: 20,
+                              ),
+                            ),
+                            maxLines: 3,
+                            maxLength: 255,
+                            enabled: !isLoading,
                           ),
-                          if (_selectedLocation != null)
-                            MarkerLayer(
-                              markers: [
-                                Marker(
-                                  point: _selectedLocation!,
-                                  width: 40,
-                                  height: 40,
-                                  child: const Icon(
-                                    Icons.location_on,
-                                    color: Colors.green,
-                                    size: 40,
+                          const SizedBox(height: 16),
+
+                          // CEP sincronizado
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _cepController,
+                                  decoration: AppInputDecoration.defaultDecoration(
+                                    labelText: 'CEP (Opcional)',
+                                    helperText:
+                                        'Preenche endereço e centraliza o mapa',
+                                    prefixIcon: const Icon(
+                                      Icons.markunread_mailbox_outlined,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [CepInputFormatter()],
+                                  onChanged: (val) {
+                                    if (AppSanitizers.digitsOnly(val).length ==
+                                        8) {
+                                      _lookupCepAndSyncMap(val);
+                                    }
+                                  },
+                                  enabled: !isLoading,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                height: 52,
+                                child: OutlinedButton(
+                                  style: AppButtonStyles.outlined(),
+                                  onPressed: isLoading || _isSyncingLocation
+                                      ? null
+                                      : () => _lookupCepAndSyncMap(),
+                                  child: _isSyncingLocation
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.search),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            controller: _streetController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Rua / Logradouro (Opcional)',
+                              prefixIcon: const Icon(
+                                Icons.signpost_outlined,
+                                size: 20,
+                              ),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            controller: _districtController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Bairro (Opcional)',
+                              prefixIcon: const Icon(
+                                Icons.holiday_village_outlined,
+                                size: 20,
+                              ),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 16),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: TextFormField(
+                                  controller: _cityController,
+                                  decoration:
+                                      AppInputDecoration.defaultDecoration(
+                                        labelText: 'Cidade *',
+                                        prefixIcon: const Icon(
+                                          Icons.location_city_outlined,
+                                          size: 20,
+                                        ),
+                                      ),
+                                  enabled: !isLoading,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 1,
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: _selectedState,
+                                  decoration:
+                                      AppInputDecoration.defaultDecoration(
+                                        labelText: 'UF *',
+                                      ),
+                                  items: _brazilStates
+                                      .map(
+                                        (uf) => DropdownMenuItem(
+                                          value: uf,
+                                          child: Text(uf),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: isLoading
+                                      ? null
+                                      : (val) {
+                                          setState(() => _selectedState = val);
+                                        },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            controller: _referenceController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText:
+                                  'Complemento / Ponto de referência (Opcional)',
+                              helperText:
+                                  'Ex: Próximo à praça central ou mercado',
+                              prefixIcon: const Icon(
+                                Icons.location_on_outlined,
+                                size: 20,
+                              ),
+                            ),
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 6),
+
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: isLoading || _isSyncingLocation
+                                  ? null
+                                  : _syncMapFromAddressFields,
+                              icon: const Icon(
+                                Icons.pin_drop_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('Localizar endereço no mapa'),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+
+                          InkWell(
+                            onTap: isLoading
+                                ? null
+                                : () => _selectDate(context),
+                            borderRadius: BorderRadius.circular(11),
+                            child: InputDecorator(
+                              decoration: AppInputDecoration.defaultDecoration(
+                                labelText: 'Data em que foi encontrado *',
+                                prefixIcon: const Icon(
+                                  Icons.calendar_today_outlined,
+                                  size: 20,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _formatDate(_selectedDate),
+                                    style: AppTextStyles.body(),
+                                  ),
+                                  const Icon(
+                                    Icons.calendar_month,
+                                    color: AppColors.primary,
+                                    size: 20,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            controller: _contactController,
+                            decoration: AppInputDecoration.defaultDecoration(
+                              labelText: 'Telefone de Contato (Opcional)',
+                              helperText:
+                                  'Preencha apenas se acolheu o pet ou puder atender',
+                              prefixIcon:
+                                  const Icon(Icons.phone_outlined, size: 20),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            inputFormatters: [PhoneInputFormatter()],
+                            enabled: !isLoading,
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.scaffoldLight,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.privacy_tip_outlined,
+                                  size: 16,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Proteção de Dados (LGPD): O telefone é opcional. Caso você opte por informá-lo, ele será exibido no anúncio exclusivamente para que o tutor do pet entre em contato.',
+                                    style: AppTextStyles.bodySmall(
+                                      color: AppColors.textSecondary,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // --- Seção 3: Fotos do Pet (até 3) ---
+                    Text(
+                      'FOTOS DO PET (1 A 3 FOTOS) *',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: _buildMultiImagePicker(isLoading),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // --- Seção 4: Localização Exata no Mapa ---
+                    Text(
+                      'LOCALIZAÇÃO NO MAPA (OPCIONAL)',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          OutlinedButton.icon(
+                            style: AppButtonStyles.outlined(),
+                            icon: const Icon(Icons.my_location, size: 18),
+                            label: const Text('Usar minha localização atual'),
+                            onPressed: isLoading || _isSyncingLocation
+                                ? null
+                                : _useCurrentLocation,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            _isSyncingLocation
+                                ? 'Sincronizando endereço e coordenadas...'
+                                : _selectedLocation == null
+                                ? 'Toque no mapa ou informe o CEP/endereço acima para fixar o pino.'
+                                : 'Coordenadas: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
+                            style: AppTextStyles.bodySmall(
+                              color: _selectedLocation == null
+                                  ? AppColors.textSecondary
+                                  : AppColors.primary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: SizedBox(
+                              height: 260,
+                              child: FlutterMap(
+                                mapController: _mapController,
+                                options: MapOptions(
+                                  initialCenter:
+                                      _selectedLocation ??
+                                      const LatLng(-23.5505, -46.6333),
+                                  initialZoom: 15.0,
+                                  onTap: (tapPosition, point) {
+                                    if (!isLoading && !_isSyncingLocation) {
+                                      _syncAddressFromCoordinates(point);
+                                    }
+                                  },
+                                ),
+                                children: [
+                                  TileLayer(
+                                    urlTemplate:
+                                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                    userAgentPackageName: 'com.example.app',
+                                  ),
+                                  if (_selectedLocation != null)
+                                    MarkerLayer(
+                                      markers: [
+                                        Marker(
+                                          point: _selectedLocation!,
+                                          width: 40,
+                                          height: 40,
+                                          child: const Icon(
+                                            Icons.location_on,
+                                            color: AppColors.success,
+                                            size: 40,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 32),
 
                     if (isLoading)
-                      const Center(child: CircularProgressIndicator())
+                      const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primary,
+                        ),
+                      )
                     else ...[
                       ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: Colors.green,
-                        ),
+                        style: AppButtonStyles.primary(),
                         onPressed: _submitForm,
                         child: Text(
                           widget.alertId != null
                               ? 'Salvar Alterações'
                               : 'Cadastrar Pet Encontrado',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
                       OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
+                        style: AppButtonStyles.outlined(),
                         onPressed: () => context.pop(),
                         child: const Text('Cancelar'),
                       ),
                     ],
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -619,79 +1231,169 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     );
   }
 
-  Widget _buildImagePicker(bool isLoading) {
-    final hasPreview =
-        _selectedImageBytes != null ||
-        (_existingImageUrl != null && _existingImageUrl!.isNotEmpty);
+  Widget _buildMultiImagePicker(bool isLoading) {
+    final canAddMore = _photos.length < _maxPhotos;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (hasPreview)
-          Container(
-            height: 200,
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(11),
-              child: _selectedImageBytes != null
-                  ? Image.memory(_selectedImageBytes!, fit: BoxFit.cover)
-                  : Image.network(
-                      _existingImageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const Icon(Icons.broken_image),
-                    ),
-            ),
-          )
-        else
-          Container(
-            height: 120,
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Icon(Icons.add_a_photo, size: 48, color: Colors.grey),
-            ),
+        Text(
+          'Adicione até $_maxPhotos fotos nítidas do pet encontrado (diferentes ângulos ajudam a IA a localizar o tutor).',
+          style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _maxPhotos,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.9,
           ),
+          itemBuilder: (context, index) {
+            if (index < _photos.length) {
+              final item = _photos[index];
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: index == 0
+                            ? AppColors.primary
+                            : AppColors.border,
+                        width: index == 0 ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: item.bytes != null
+                          ? Image.memory(item.bytes!, fit: BoxFit.cover)
+                          : Image.network(
+                              item.existingUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Center(
+                                    child: Icon(
+                                      Icons.broken_image,
+                                      size: 28,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                            ),
+                    ),
+                  ),
+                  if (index == 0)
+                    Positioned(
+                      bottom: 4,
+                      left: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Principal',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: InkWell(
+                      onTap: isLoading
+                          ? null
+                          : () {
+                              setState(() {
+                                _photos.removeAt(index);
+                              });
+                            },
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return InkWell(
+              onTap: isLoading ? null : () => _pickImage(ImageSource.gallery),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.scaffoldLight,
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.add_a_photo_outlined,
+                      size: 26,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Foto ${index + 1}',
+                      style: AppTextStyles.bodySmall(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Câmera'),
-              onPressed: isLoading
-                  ? null
-                  : () => _pickImage(ImageSource.camera),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: AppButtonStyles.outlined(),
+                icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                label: const Text('Câmera'),
+                onPressed: isLoading || !canAddMore
+                    ? null
+                    : () => _pickImage(ImageSource.camera),
+              ),
             ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.photo_library),
-              label: const Text('Galeria'),
-              onPressed: isLoading
-                  ? null
-                  : () => _pickImage(ImageSource.gallery),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: AppButtonStyles.outlined(),
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                label: Text('Galeria (${_photos.length}/$_maxPhotos)'),
+                onPressed: isLoading || !canAddMore
+                    ? null
+                    : () => _pickImage(ImageSource.gallery),
+              ),
             ),
           ],
         ),
-        if (hasPreview)
-          TextButton(
-            onPressed: isLoading
-                ? null
-                : () {
-                    setState(() {
-                      _selectedImageBytes = null;
-                      _selectedImageFileName = null;
-                      _existingImageUrl = null;
-                    });
-                  },
-            child: const Text('Remover imagem'),
-          ),
       ],
     );
   }

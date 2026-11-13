@@ -21,6 +21,7 @@ import '../../features/notification/presentation/screens/notification_list_scree
 import '../../features/pet_recognition/presentation/screens/pet_match_results_screen.dart';
 import '../../features/pet_recognition/presentation/screens/pet_match_detail_screen.dart';
 import '../../features/pet_lost/domain/pet_lost_entity.dart';
+import '../../features/pet_found/domain/pet_found_entity.dart';
 import 'app_routes.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -119,12 +120,17 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final userId = state.pathParameters['userId']!;
           final lostId = state.uri.queryParameters['lostId'];
+          final foundId = state.uri.queryParameters['foundId'];
           return PublicProfileScreen(
             userId: userId,
             lostAlert: state.extra is PetLostAlertEntity
                 ? state.extra as PetLostAlertEntity
                 : null,
             lostAlertId: lostId,
+            foundAlert: state.extra is PetFoundAlertEntity
+                ? state.extra as PetFoundAlertEntity
+                : null,
+            foundAlertId: foundId,
           );
         },
       ),
