@@ -10,6 +10,7 @@ import '../../../pet_lost/data/pet_lost_repository.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart';
 import '../../data/services/supabase_pet_recognition_service.dart';
 import '../../domain/models/pet_match_candidate_entity.dart';
+import '../../domain/utils/recognition_config.dart';
 import '../widgets/similarity_badge.dart';
 
 /// Tela de visualização direta da correspondência entre um pet perdido e um pet encontrado.
@@ -285,7 +286,7 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
     }
 
     final found = _foundPet!;
-    final score = _score ?? 0.70;
+    final score = _score ?? RecognitionConfig.kSimilarityThreshold;
     final petTitle = found.breed != null && found.breed!.isNotEmpty
         ? found.breed!
         : (found.petType == PetType.dog

@@ -48,9 +48,9 @@ class PetMatchCandidateEntity {
 
   /// Retorna o nível de confiança visual ou cadastral.
   MatchConfidenceLevel get confidenceLevel {
-    if (similarityScore >= 0.82) {
+    if (similarityScore >= 0.92) {
       return MatchConfidenceLevel.high;
-    } else if (similarityScore >= 0.70) {
+    } else if (similarityScore >= 0.88) {
       return MatchConfidenceLevel.medium;
     } else {
       return MatchConfidenceLevel.low;

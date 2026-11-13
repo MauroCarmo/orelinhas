@@ -838,19 +838,19 @@ void main() {
       expect(score, isNull);
     });
 
-    test('saveMatch com score >= 0.70 persiste e permite consultar score', () async {
+    test('saveMatch com score >= 0.88 persiste e permite consultar score', () async {
       final fakeSupabase = FakeSupabaseClient();
       final supabaseService = SupabasePetRecognitionService(fakeSupabase);
 
       await supabaseService.saveMatch(
         lostPetId: 'lost_good_1',
         foundPetId: 'found_good_1',
-        similarityScore: 0.85,
+        similarityScore: 0.90,
         origin: 'manual',
       );
 
       final score = await supabaseService.getMatchScore('lost_good_1', 'found_good_1');
-      expect(score, equals(0.85));
+      expect(score, equals(0.90));
     });
 
     test('Transição de correspondência manual para automática preserva par e atualiza origem', () async {
@@ -864,23 +864,23 @@ void main() {
       await supabaseService.saveMatch(
         lostPetId: lostId,
         foundPetId: foundId,
-        similarityScore: 0.82,
+        similarityScore: 0.89,
         origin: 'manual',
       );
 
       var score = await supabaseService.getMatchScore(lostId, foundId);
-      expect(score, equals(0.82));
+      expect(score, equals(0.89));
 
       // 2. Busca automática subsequente detecta o mesmo par
       await supabaseService.saveMatch(
         lostPetId: lostId,
         foundPetId: foundId,
-        similarityScore: 0.84,
+        similarityScore: 0.91,
         origin: 'automatic',
       );
 
       score = await supabaseService.getMatchScore(lostId, foundId);
-      expect(score, equals(0.84));
+      expect(score, equals(0.91));
     });
   });
 
@@ -1072,8 +1072,8 @@ void main() {
       expect(scoreComZero3, closeTo(0.78, 0.001));
     });
 
-    test('RecognitionConfig centraliza limiar de similaridade em 0.70', () {
-      expect(RecognitionConfig.kSimilarityThreshold, equals(0.70));
+    test('RecognitionConfig centraliza limiar de similaridade em 0.88', () {
+      expect(RecognitionConfig.kSimilarityThreshold, equals(0.88));
     });
   });
 }

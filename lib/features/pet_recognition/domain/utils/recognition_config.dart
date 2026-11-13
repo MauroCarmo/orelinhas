@@ -5,5 +5,5 @@
 abstract class RecognitionConfig {
   /// Limiar mínimo de similaridade para correspondências (manual e automática).
   /// Valor imposto também no servidor — o cliente não pode reduzi-lo.
-  static const double kSimilarityThreshold = 0.70;
+  static const double kSimilarityThreshold = 0.88;
 }

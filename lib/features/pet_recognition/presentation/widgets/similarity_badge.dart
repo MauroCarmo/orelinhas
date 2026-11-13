@@ -13,9 +13,9 @@ class SimilarityBadge extends StatelessWidget {
   });
 
   Color _getColor(BuildContext context) {
-    if (score >= 0.82) {
+    if (score >= 0.92) {
       return Colors.green.shade700;
-    } else if (score >= 0.70) {
+    } else if (score >= 0.88) {
       return Colors.orange.shade800;
     } else {
       return Colors.blueGrey.shade700;
@@ -23,9 +23,9 @@ class SimilarityBadge extends StatelessWidget {
   }
 
   Color _getBackgroundColor(BuildContext context) {
-    if (score >= 0.82) {
+    if (score >= 0.92) {
       return Colors.green.shade50;
-    } else if (score >= 0.70) {
+    } else if (score >= 0.88) {
       return Colors.orange.shade50;
     } else {
       return Colors.blueGrey.shade50;

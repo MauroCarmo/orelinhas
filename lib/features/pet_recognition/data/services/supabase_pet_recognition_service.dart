@@ -403,7 +403,7 @@ class SupabasePetRecognitionService {
   }
 
   /// Registra uma correspondência utilizando a RPC segura save_match no Supabase.
-  /// Apenas correspondências com similarityScore >= 0.70 são persistidas.
+  /// Apenas correspondências com similarityScore >= 0.88 são persistidas.
   /// O servidor valida autenticação, titularidade, espécies e calcula a pontuação oficial
   /// utilizando a fórmula balanceada multi-sinal (0.50 maior + 0.30 média + 0.20 agregado).
   Future<void> saveMatch({
@@ -414,8 +414,8 @@ class SupabasePetRecognitionService {
     List<double> individualScores = const [],
     String origin = 'manual',
   }) async {
-    if (similarityScore < 0.70) {
-      _logger.i('Score de similaridade abaixo do limiar padrão (0.70), match descartado.', context: {
+    if (similarityScore < RecognitionConfig.kSimilarityThreshold) {
+      _logger.i('Score de similaridade abaixo do limiar padrão (${RecognitionConfig.kSimilarityThreshold}), match descartado.', context: {
         'lostPetId': lostPetId,
         'foundPetId': foundPetId,
         'similarity': similarityScore,
@@ -471,7 +471,7 @@ class SupabasePetRecognitionService {
     required String functionName,
     required String targetPetType,
     required String excludePetId,
-    double similarityThreshold = 0.70,
+    double similarityThreshold = RecognitionConfig.kSimilarityThreshold,
     int matchLimit = 20,
   }) async {
     try {
@@ -499,7 +499,7 @@ class SupabasePetRecognitionService {
   /// Recupera as correspondências persistidas no banco para um pet perdido.
   Future<List<Map<String, dynamic>>> getMatchesForLostPet(
     String lostPetId, {
-    double minScore = 0.70,
+    double minScore = RecognitionConfig.kSimilarityThreshold,
   }) async {
     try {
       final data = await _supabase

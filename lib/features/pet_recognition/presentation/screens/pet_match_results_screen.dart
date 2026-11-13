@@ -110,7 +110,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                   if (_targetPet != null) _buildQueryPetCard(_targetPet!),
                   const SizedBox(height: 16),
 
-                  // Botão de nova busca manual (threshold fixo em 70% — controlado pelo servidor)
+                  // Botão de nova busca manual (threshold fixo em 88% — controlado pelo servidor)
                   _buildNewSearchButton(matchState),
                   const SizedBox(height: 16),
 

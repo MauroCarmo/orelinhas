@@ -524,7 +524,7 @@ CREATE OR REPLACE FUNCTION public.match_found_pets_for_lost(
     p_source_pet_id uuid DEFAULT NULL,
     target_pet_type character varying DEFAULT NULL,
     exclude_pet_id uuid DEFAULT NULL,
-    similarity_threshold double precision DEFAULT 0.70,
+    similarity_threshold double precision DEFAULT 0.88,
     match_limit integer DEFAULT 20,
     p_user_id uuid DEFAULT NULL
 )
@@ -624,8 +624,8 @@ BEGIN
     END IF;
 
     -- 4. Normalização defensiva de parâmetros de busca
-    -- Limiar fixo e inviolável no servidor: 0.70
-    v_norm_threshold := 0.70;
+    -- Limiar fixo e inviolável no servidor: 0.88
+    v_norm_threshold := 0.88;
 
     v_norm_limit := COALESCE(match_limit, 20);
     IF v_norm_limit < 1 OR v_norm_limit > 100 THEN
@@ -706,7 +706,7 @@ CREATE OR REPLACE FUNCTION public.match_lost_pets_for_found(
     p_source_pet_id uuid DEFAULT NULL,
     target_pet_type character varying DEFAULT NULL,
     exclude_pet_id uuid DEFAULT NULL,
-    similarity_threshold double precision DEFAULT 0.70,
+    similarity_threshold double precision DEFAULT 0.88,
     match_limit integer DEFAULT 20,
     p_user_id uuid DEFAULT NULL
 )
@@ -806,8 +806,8 @@ BEGIN
     END IF;
 
     -- 4. Normalização defensiva de parâmetros
-    -- Limiar fixo e inviolável no servidor: 0.70
-    v_norm_threshold := 0.70;
+    -- Limiar fixo e inviolável no servidor: 0.88
+    v_norm_threshold := 0.88;
 
     v_norm_limit := COALESCE(match_limit, 20);
     IF v_norm_limit < 1 OR v_norm_limit > 100 THEN
@@ -887,7 +887,7 @@ CREATE OR REPLACE FUNCTION public.save_match(
     p_lost_pet_id uuid,
     p_found_pet_id uuid,
     p_match_method text DEFAULT 'visual_multi_vector',
-    p_similarity_threshold double precision DEFAULT 0.70
+    p_similarity_threshold double precision DEFAULT 0.88
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -922,8 +922,8 @@ BEGIN
         RAISE EXCEPTION 'Acesso negado: operação requer usuário autenticado.' USING ERRCODE = 'P0001';
     END IF;
 
-    -- Normalização e validação de limiar: fixo em 0.70 no servidor
-    v_threshold := 0.70;
+    -- Normalização e validação de limiar: fixo em 0.88 no servidor
+    v_threshold := 0.88;
 
     -- 2. Validar existência e status ativo do pet perdido
     SELECT * INTO v_lost_pet FROM public.pet_lost_alerts WHERE id = p_lost_pet_id;
@@ -1085,7 +1085,7 @@ BEGIN
 END;
 $$;
 
--- 4.9 Notificação automática de matches (apenas matches automáticos com score >= 0.70)
+-- 4.9 Notificação automática de matches (apenas matches automáticos com score >= 0.88)
 CREATE OR REPLACE FUNCTION public.handle_auto_match_notification()
 RETURNS TRIGGER 
 LANGUAGE plpgsql
@@ -1101,11 +1101,11 @@ DECLARE
     v_score_percentage text;
     v_should_notify boolean := false;
 BEGIN
-    IF TG_OP = 'INSERT' AND NEW.origin = 'automatic' AND NEW.similarity_score >= 0.70 THEN
+    IF TG_OP = 'INSERT' AND NEW.origin = 'automatic' AND NEW.similarity_score >= 0.88 THEN
         v_should_notify := true;
     END IF;
 
-    IF TG_OP = 'UPDATE' AND (OLD.origin IS DISTINCT FROM 'automatic') AND NEW.origin = 'automatic' AND NEW.similarity_score >= 0.70 THEN
+    IF TG_OP = 'UPDATE' AND (OLD.origin IS DISTINCT FROM 'automatic') AND NEW.origin = 'automatic' AND NEW.similarity_score >= 0.88 THEN
         v_should_notify := true;
     END IF;
 
