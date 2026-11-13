@@ -320,6 +320,35 @@ class SupabasePetRecognitionService {
     }
   }
 
+  /// Recupera as URLs das imagens cadastradas para um pet (até 3) na ordem de inserção.
+  Future<List<String>> getPetImageUrls(String petId) async {
+    try {
+      final data = await _supabase
+          .from('pet_images')
+          .select('image_url')
+          .eq('pet_id', petId)
+          .order('created_at', ascending: true);
+
+      final urls = <String>[];
+      for (final row in data) {
+        final url = row['image_url'] as String?;
+        if (url != null &&
+            url.trim().isNotEmpty &&
+            !urls.contains(url.trim())) {
+          urls.add(url.trim());
+        }
+      }
+      return urls.take(3).toList();
+    } catch (e, st) {
+      _logger.w(
+        'Erro ao consultar URLs de imagens do pet.',
+        error: e,
+        stackTrace: st,
+      );
+      return [];
+    }
+  }
+
   /// Sincroniza a tabela pet_images com as URLs ativas do anúncio:
   /// Remove da tabela pet_images registros que não pertençam mais a [activeImageUrls].
   /// Nunca apaga arquivos do Storage, apenas desassocia registros de embeddings obsoletos.

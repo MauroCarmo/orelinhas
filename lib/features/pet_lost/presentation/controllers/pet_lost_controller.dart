@@ -10,9 +10,10 @@ import '../../../pet_recognition/data/repositories/pet_recognition_repository.da
 
 import 'public_pet_lost_controller.dart';
 
-final petLostControllerProvider = AsyncNotifierProvider<PetLostController, List<PetLostAlertEntity>>(() {
-  return PetLostController();
-});
+final petLostControllerProvider =
+    AsyncNotifierProvider<PetLostController, List<PetLostAlertEntity>>(() {
+      return PetLostController();
+    });
 
 class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
   late PetLostRepository _repository;
@@ -22,7 +23,7 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
   FutureOr<List<PetLostAlertEntity>> build() async {
     _repository = ref.watch(petLostRepositoryProvider);
     final user = ref.watch(currentUserProvider);
-    
+
     if (user == null) {
       return [];
     }
@@ -33,12 +34,15 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
       return await _repository.getUserAlerts(user.id);
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro ao buscar lista inicial no PetLostController.', error: appException, stackTrace: st);
+      _logger.e(
+        'Erro ao buscar lista inicial no PetLostController.',
+        error: appException,
+        stackTrace: st,
+      );
       throw appException;
     }
   }
 
-  /// Recarrega a lista de alertas manualmente a partir do repositório.
   Future<void> refreshAlerts() async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -49,14 +53,15 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
       state = AsyncData(list);
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro ao atualizar lista no PetLostController.', error: appException, stackTrace: st);
+      _logger.e(
+        'Erro ao atualizar lista no PetLostController.',
+        error: appException,
+        stackTrace: st,
+      );
       state = AsyncError(appException, st);
     }
   }
 
-  /// Cria um novo alerta de pet perdido chamando o repositório.
-  /// O controller não realiza validação ou sanitização, apenas orquestra o estado.
-  /// Contém proteção contra envio concorrente redundante (double submit).
   Future<void> createAlert(PetLostAlertEntity alert) async {
     final user = ref.read(currentUserProvider);
     if (user == null) throw const AppAuthException('Usuário não autenticado.');
@@ -68,38 +73,53 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
     state = const AsyncLoading();
     try {
       final createdAlert = await _repository.createAlert(user.id, alert);
-      // Recarrega a lista reativamente
+      final alertWithAllImages = createdAlert.copyWith(
+        imageUrls: alert.effectiveImageUrls,
+      );
+
       final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
-      // Invalida o feed público para que também seja atualizado
       ref.invalidate(publicPetLostControllerProvider);
-      _logger.i('Novo alerta registrado com sucesso no controller.', context: {'alertId': createdAlert.id});
+      _logger.i(
+        'Novo alerta registrado com sucesso no controller.',
+        context: {'alertId': createdAlert.id},
+      );
 
-      // Dispara processamento visual e busca de matches com IA em segundo plano
-      if (createdAlert.imageUrl != null && createdAlert.imageUrl!.isNotEmpty) {
+      final allUrls = alertWithAllImages.effectiveImageUrls;
+      if (allUrls.isNotEmpty) {
         final recognitionRepo = ref.read(petRecognitionRepositoryProvider);
-        recognitionRepo.processPetImages(
-          petId: createdAlert.id,
-          petType: createdAlert.petType,
-          imageUrls: [createdAlert.imageUrl!],
-        ).then((visualProfile) {
-          recognitionRepo.findMatches(
-            queryPet: createdAlert,
-            queryVisualProfile: visualProfile,
-            origin: 'automatic',
-          );
-        }).catchError((e) {
-          _logger.w('Processamento de IA em background falhou suavemente.', error: e);
-        });
+        recognitionRepo
+            .processPetImages(
+              petId: createdAlert.id,
+              petType: createdAlert.petType,
+              imageUrls: allUrls,
+            )
+            .then((visualProfile) {
+              recognitionRepo.findMatches(
+                queryPet: alertWithAllImages,
+                queryVisualProfile: visualProfile,
+                origin: 'automatic',
+              );
+            })
+            .catchError((e) {
+              _logger.w(
+                'Processamento de IA em background falhou suavemente.',
+                error: e,
+              );
+            });
       }
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro ao criar alerta no PetLostController.', error: appException, stackTrace: st, context: {'alertId': alert.id});
+      _logger.e(
+        'Erro ao criar alerta no PetLostController.',
+        error: appException,
+        stackTrace: st,
+        context: {'alertId': alert.id},
+      );
       state = AsyncError(appException, st);
     }
   }
 
-  /// Atualiza um alerta existente com proteção contra envio concorrente.
   Future<void> updateAlert(PetLostAlertEntity alert) async {
     final user = ref.read(currentUserProvider);
     if (user == null) throw const AppAuthException('Usuário não autenticado.');
@@ -109,47 +129,54 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
       return;
     }
 
-    final previousAlert = state.value?.firstWhere(
-      (a) => a.id == alert.id,
-      orElse: () => alert,
-    );
-    final imageChanged = previousAlert != null && previousAlert.imageUrl != alert.imageUrl;
+    final allUrls = alert.effectiveImageUrls;
 
     state = const AsyncLoading();
     try {
       await _repository.updateAlert(user.id, alert);
-      // Recarrega a lista reativamente
       final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
-      // Invalida o feed público para atualizar lá também
       ref.invalidate(publicPetLostControllerProvider);
-      _logger.i('Alerta atualizado com sucesso no controller.', context: {'alertId': alert.id});
+      _logger.i(
+        'Alerta atualizado com sucesso no controller.',
+        context: {'alertId': alert.id},
+      );
 
-      // Se a imagem mudou e há URL válida, reprocessa embeddings em background
-      if (imageChanged && alert.imageUrl != null && alert.imageUrl!.isNotEmpty) {
+      // Sincroniza pet_images (reutiliza embeddings já existentes e processa apenas fotos novas)
+      if (allUrls.isNotEmpty) {
         final recognitionRepo = ref.read(petRecognitionRepositoryProvider);
-        recognitionRepo.processPetImages(
-          petId: alert.id,
-          petType: alert.petType,
-          imageUrls: [alert.imageUrl!],
-        ).then((visualProfile) {
-          recognitionRepo.findMatches(
-            queryPet: alert,
-            queryVisualProfile: visualProfile,
-            origin: 'automatic',
-          );
-        }).catchError((e) {
-          _logger.w('Reprocessamento de IA ao atualizar alerta falhou suavemente.', error: e);
-        });
+        recognitionRepo
+            .processPetImages(
+              petId: alert.id,
+              petType: alert.petType,
+              imageUrls: allUrls,
+            )
+            .then((visualProfile) {
+              recognitionRepo.findMatches(
+                queryPet: alert,
+                queryVisualProfile: visualProfile,
+                origin: 'automatic',
+              );
+            })
+            .catchError((e) {
+              _logger.w(
+                'Reprocessamento de IA ao atualizar alerta falhou suavemente.',
+                error: e,
+              );
+            });
       }
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro ao atualizar alerta no PetLostController.', error: appException, stackTrace: st, context: {'alertId': alert.id});
+      _logger.e(
+        'Erro ao atualizar alerta no PetLostController.',
+        error: appException,
+        stackTrace: st,
+        context: {'alertId': alert.id},
+      );
       state = AsyncError(appException, st);
     }
   }
 
-  /// Exclui um alerta do pet perdido por ID com proteção contra exclusão concorrente.
   Future<void> deleteAlert(String id) async {
     final user = ref.read(currentUserProvider);
     if (user == null) throw const AppAuthException('Usuário não autenticado.');
@@ -161,20 +188,25 @@ class PetLostController extends AsyncNotifier<List<PetLostAlertEntity>> {
     state = const AsyncLoading();
     try {
       await _repository.deleteAlert(user.id, id);
-      // Recarrega a lista reativamente
       final list = await _repository.getUserAlerts(user.id);
       state = AsyncData(list);
-      // Invalida o feed público
       ref.invalidate(publicPetLostControllerProvider);
-      _logger.i('Alerta excluído com sucesso no controller.', context: {'alertId': id});
+      _logger.i(
+        'Alerta excluído com sucesso no controller.',
+        context: {'alertId': id},
+      );
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro ao excluir alerta no PetLostController.', error: appException, stackTrace: st, context: {'alertId': id});
+      _logger.e(
+        'Erro ao excluir alerta no PetLostController.',
+        error: appException,
+        stackTrace: st,
+        context: {'alertId': id},
+      );
       state = AsyncError(appException, st);
     }
   }
 
-  /// Marca um alerta como resolvido por ID com proteção contra ação concorrente.
   Future<void> resolveAlert(String alertId) async {
     final user = ref.read(currentUserProvider);
     if (user == null) throw const AppAuthException('Usuário não autenticado.');

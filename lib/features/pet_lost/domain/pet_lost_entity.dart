@@ -27,8 +27,8 @@ class PetLostAlertEntity {
   final DateTime lostDate;
   final String contact;
   final String? imageUrl;
+  final List<String> imageUrls;
   final DateTime? createdAt;
-  // Novos campos
   final double? latitude;
   final double? longitude;
   final AlertStatus status;
@@ -45,11 +45,27 @@ class PetLostAlertEntity {
     required this.lostDate,
     required this.contact,
     this.imageUrl,
+    this.imageUrls = const [],
     this.createdAt,
     this.latitude,
     this.longitude,
     this.status = AlertStatus.active,
   });
+
+  /// Retorna todas as URLs de imagens disponíveis (até 3), mantendo fallback para [imageUrl].
+  List<String> get effectiveImageUrls {
+    final urls = <String>[];
+    for (final url in imageUrls) {
+      final trimmed = url.trim();
+      if (trimmed.isNotEmpty && !urls.contains(trimmed)) {
+        urls.add(trimmed);
+      }
+    }
+    if (urls.isEmpty && imageUrl != null && imageUrl!.trim().isNotEmpty) {
+      urls.add(imageUrl!.trim());
+    }
+    return urls.take(3).toList();
+  }
 
   factory PetLostAlertEntity.fromJson(Map<String, dynamic> json) {
     final petTypeStr = json['pet_type'] as String? ?? 'other';
@@ -64,6 +80,8 @@ class PetLostAlertEntity {
       orElse: () => AlertStatus.active,
     );
 
+    final primaryImageUrl = json['image_url'] as String?;
+
     return PetLostAlertEntity(
       id: json['id'] as String,
       userId: json['user_id'] as String,
@@ -77,7 +95,10 @@ class PetLostAlertEntity {
           ? DateTime.parse(json['lost_date'] as String)
           : DateTime.now(),
       contact: json['contact'] as String? ?? '',
-      imageUrl: json['image_url'] as String?,
+      imageUrl: primaryImageUrl,
+      imageUrls: primaryImageUrl != null && primaryImageUrl.isNotEmpty
+          ? [primaryImageUrl]
+          : const [],
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -92,13 +113,17 @@ class PetLostAlertEntity {
   }
 
   Map<String, dynamic> toJson() {
+    final effectiveDesc = description.trim().isEmpty
+        ? 'Sem descrição adicional.'
+        : description.trim();
+
     final map = <String, dynamic>{
       'user_id': userId,
       'pet_name': petName,
       'pet_type': petType.name,
       'breed': breed,
       'age': age,
-      'description': description,
+      'description': effectiveDesc,
       'last_location': lastLocation,
       'lost_date': lostDate.toIso8601String(),
       'contact': contact,
@@ -125,6 +150,7 @@ class PetLostAlertEntity {
     DateTime? lostDate,
     String? contact,
     String? imageUrl,
+    List<String>? imageUrls,
     DateTime? createdAt,
     double? latitude,
     double? longitude,
@@ -142,6 +168,7 @@ class PetLostAlertEntity {
       lostDate: lostDate ?? this.lostDate,
       contact: contact ?? this.contact,
       imageUrl: imageUrl ?? this.imageUrl,
+      imageUrls: imageUrls ?? this.imageUrls,
       createdAt: createdAt ?? this.createdAt,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
@@ -171,18 +198,16 @@ class PetLostAlertEntity {
       if (ageError != null) errors.add(ageError);
     }
 
-    // Descrição: obrigatório, min 10, max 255
-    final descError = AppValidators.combine([
-      AppValidators.required('Descrição'),
-      AppValidators.minLength(10, 'Descrição'),
-      AppValidators.maxLength(255, 'Descrição'),
-    ])(description);
-    if (descError != null) errors.add(descError);
+    // Descrição (opcional, máx 255 caracteres se preenchida)
+    if (description.trim().isNotEmpty) {
+      final descError = AppValidators.maxLength(255, 'Descrição')(description);
+      if (descError != null) errors.add(descError);
+    }
 
-    // Última localização (texto): obrigatório, max 200
+    // Endereço / Localização consolidada (garante UF/localidade)
     final locError = AppValidators.combine([
-      AppValidators.required('Última Localização'),
-      AppValidators.maxLength(200, 'Última Localização'),
+      AppValidators.required('Endereço / Estado (UF)'),
+      AppValidators.maxLength(200, 'Endereço'),
     ])(lastLocation);
     if (locError != null) errors.add(locError);
 
@@ -198,24 +223,28 @@ class PetLostAlertEntity {
     ])(contact);
     if (contactError != null) errors.add(contactError);
 
-    // Foto obrigatória
-    if (imageUrl == null || imageUrl!.trim().isEmpty) {
-      errors.add('A foto do pet é obrigatória.');
+    // Foto obrigatória (1 a 3 fotos)
+    final urls = effectiveImageUrls;
+    if (urls.isEmpty) {
+      errors.add('Pelo menos 1 foto do pet é obrigatória.');
+    } else if (urls.length > 3) {
+      errors.add('São permitidas no máximo 3 fotos por alerta.');
     } else {
-      final urlError = AppValidators.maxLength(500, 'URL da Imagem')(imageUrl);
-      if (urlError != null) errors.add(urlError);
+      for (final url in urls) {
+        final urlError = AppValidators.maxLength(500, 'URL da Imagem')(url);
+        if (urlError != null) {
+          errors.add(urlError);
+          break;
+        }
+      }
     }
 
-    // Coordenadas obrigatórias
-    if (latitude == null || longitude == null) {
-      errors.add('A localização exata (coordenadas) é obrigatória.');
-    } else {
-      if (latitude! < -90 || latitude! > 90) {
-        errors.add('Latitude inválida.');
-      }
-      if (longitude! < -180 || longitude! > 180) {
-        errors.add('Longitude inválida.');
-      }
+    // Coordenadas opcionais (valida faixa apenas se informadas)
+    if (latitude != null && (latitude! < -90 || latitude! > 90)) {
+      errors.add('Latitude inválida.');
+    }
+    if (longitude != null && (longitude! < -180 || longitude! > 180)) {
+      errors.add('Longitude inválida.');
     }
 
     return errors;
