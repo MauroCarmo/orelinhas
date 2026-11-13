@@ -6,15 +6,19 @@ import '../app_theme.dart';
 class AppButtonStyles {
   AppButtonStyles._();
 
+  static TextStyle get _text =>
+      GoogleFonts.nunito(fontSize: 15, fontWeight: FontWeight.w800);
+
   /// Botão primário preenchido (ação principal).
   static ButtonStyle primary({Color? backgroundColor, Color? foregroundColor}) {
     return ElevatedButton.styleFrom(
       backgroundColor: backgroundColor ?? AppColors.primary,
-      foregroundColor: foregroundColor ?? AppColors.accent,
+      foregroundColor: foregroundColor ?? Colors.white,
       elevation: 0,
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      textStyle: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w700),
+      minimumSize: const Size(0, 52),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 22),
+      shape: const StadiumBorder(),
+      textStyle: _text,
     );
   }
 
@@ -24,9 +28,10 @@ class AppButtonStyles {
       backgroundColor: AppColors.success,
       foregroundColor: Colors.white,
       elevation: 0,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      textStyle: GoogleFonts.lato(fontSize: 13, fontWeight: FontWeight.w700),
+      minimumSize: const Size(0, 52),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 22),
+      shape: const StadiumBorder(),
+      textStyle: _text,
     );
   }
 
@@ -36,21 +41,27 @@ class AppButtonStyles {
       backgroundColor: AppColors.error,
       foregroundColor: Colors.white,
       elevation: 0,
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      textStyle: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w700),
+      minimumSize: const Size(0, 52),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 22),
+      shape: const StadiumBorder(),
+      textStyle: _text,
     );
   }
 
   /// Botão contornado (ação secundária).
-  static ButtonStyle outlined() {
+  static ButtonStyle outlined({Color? foregroundColor}) {
     return OutlinedButton.styleFrom(
-      foregroundColor: AppColors.primary,
+      foregroundColor: foregroundColor ?? AppColors.primary,
+      backgroundColor: AppColors.surfaceLight,
       elevation: 0,
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      side: const BorderSide(color: AppColors.border),
-      textStyle: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w700),
+      minimumSize: const Size(0, 52),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 22),
+      shape: const StadiumBorder(),
+      side: BorderSide(
+        color: foregroundColor?.withAlpha(90) ?? AppColors.border,
+        width: 1.2,
+      ),
+      textStyle: _text,
     );
   }
 }

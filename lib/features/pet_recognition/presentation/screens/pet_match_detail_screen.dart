@@ -3,18 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../pet_found/data/pet_found_repository.dart';
 import '../../../pet_found/domain/pet_found_entity.dart';
 import '../../../pet_lost/data/pet_lost_repository.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart';
+import '../../../pet_lost/presentation/widgets/pet_widgets.dart';
 import '../../data/services/supabase_pet_recognition_service.dart';
 import '../../domain/models/pet_match_candidate_entity.dart';
 import '../../domain/utils/recognition_config.dart';
 import '../widgets/similarity_badge.dart';
 
-/// Tela de visualização direta da correspondência entre um pet perdido e um pet encontrado.
-/// Exibe os dados do pet avistado e a pontuação persistida sem disparar nova inferência por IA.
 class PetMatchDetailScreen extends ConsumerStatefulWidget {
   final String foundPetId;
   final String? lostPetId;
@@ -115,57 +113,35 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: AppColors.scaffoldLight,
         appBar: AppBar(
-          title: Text(
-            'Carregando Correspondência...',
-            style: AppTextStyles.heading2(color: Colors.white),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            tooltip: 'Voltar',
+            onPressed: () => context.pop(),
           ),
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          title: const Text('Correspondência'),
         ),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_foundPet == null) {
       return Scaffold(
-        backgroundColor: AppColors.scaffoldLight,
         appBar: AppBar(
-          title: Text(
-            'Correspondência',
-            style: AppTextStyles.heading2(color: Colors.white),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            tooltip: 'Voltar',
+            onPressed: () => context.pop(),
           ),
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          title: const Text('Correspondência'),
         ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
-                const SizedBox(height: 16),
-                Text('Anúncio Não Encontrado', style: AppTextStyles.heading2()),
-                const SizedBox(height: 8),
-                Text(
-                  'O anúncio deste pet encontrado não está mais disponível ou foi encerrado pelo autor.',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.body(color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  style: AppButtonStyles.primary(),
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Voltar às Notificações'),
-                  onPressed: () => context.pop(),
-                ),
-              ],
-            ),
-          ),
+        body: EmptyState(
+          icon: Icons.search_off_rounded,
+          title: 'Anúncio não encontrado',
+          message:
+              'O anúncio deste pet encontrado não está mais disponível ou foi encerrado pelo autor.',
+          actionLabel: 'Voltar',
+          onAction: () => context.pop(),
         ),
       );
     }
@@ -174,71 +150,58 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
     final score = _score ?? RecognitionConfig.kSimilarityThreshold;
     final petTitle = found.breed != null && found.breed!.isNotEmpty
         ? found.breed!
-        : (found.petType == PetType.dog
-              ? 'Cachorro Encontrado'
-              : found.petType == PetType.cat
-              ? 'Gato Encontrado'
-              : 'Pet Encontrado');
+        : switch (found.petType) {
+            PetType.dog => 'Cachorro Encontrado',
+            PetType.cat => 'Gato Encontrado',
+            PetType.other => 'Pet Encontrado',
+          };
 
     return Scaffold(
-      backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
-        title: Text(
-          'Detalhes da Correspondência',
-          style: AppTextStyles.heading2(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: 'Voltar',
+          onPressed: () => context.pop(),
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        title: const Text('Detalhes da correspondência'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Card Principal do Pet Encontrado
             Container(
               decoration: BoxDecoration(
                 color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.purple.shade200, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.purple.withValues(alpha: 0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                borderRadius: BorderRadius.circular(24),
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Selo de Correspondência
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 14,
+                      vertical: 10,
+                      horizontal: 16,
                     ),
-                    decoration: BoxDecoration(color: Colors.purple.shade700),
+                    color: AppColors.primarySoft,
                     child: Row(
                       children: [
                         const Icon(
-                          Icons.auto_awesome,
-                          color: Colors.white,
+                          Icons.auto_awesome_rounded,
+                          color: AppColors.primary,
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Correspondência Detectada pela IA',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                        Expanded(
+                          child: Text(
+                            'Correspondência detectada pela IA',
+                            style: AppTextStyles.label(
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
-                        const Spacer(),
                         SimilarityBadge(
                           score: score,
                           method: MatchMethod.visual,
@@ -246,24 +209,14 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
                       ],
                     ),
                   ),
-
-                  // Foto Principal do Pet Encontrado
                   if (found.imageUrl.isNotEmpty)
-                    Image.network(
-                      found.imageUrl,
-                      height: 230,
+                    SizedBox(
+                      height: 240,
                       width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        height: 180,
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.broken_image, size: 48),
-                      ),
+                      child: PetImage(url: found.imageUrl),
                     ),
-
-                  // Resumo do Pet Encontrado + Botão Único Ver Detalhes
                   Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(18),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -279,45 +232,37 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
-                                vertical: 4,
+                                vertical: 5,
                               ),
                               decoration: BoxDecoration(
-                                color: found.petType == PetType.dog
-                                    ? Colors.blue.withAlpha(35)
-                                    : found.petType == PetType.cat
-                                    ? Colors.orange.withAlpha(35)
-                                    : Colors.purple.withAlpha(35),
+                                color: AppColors.primarySoft,
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
-                                found.petType == PetType.dog
-                                    ? 'Cachorro'
-                                    : found.petType == PetType.cat
-                                    ? 'Gato'
-                                    : 'Outro',
+                                switch (found.petType) {
+                                  PetType.dog => 'Cachorro',
+                                  PetType.cat => 'Gato',
+                                  PetType.other => 'Outro',
+                                },
                                 style: AppTextStyles.label(
-                                  color: found.petType == PetType.dog
-                                      ? Colors.blue.shade800
-                                      : found.petType == PetType.cat
-                                      ? Colors.orange.shade800
-                                      : Colors.purple.shade800,
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             const Icon(
-                              Icons.location_on_outlined,
+                              Icons.place_outlined,
                               size: 18,
                               color: AppColors.success,
                             ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                'Local: ${_formatLocationForDisplay(found.foundLocation)}',
+                                _formatLocationForDisplay(found.foundLocation),
                                 style: AppTextStyles.body(
                                   color: AppColors.textPrimary,
                                 ),
@@ -329,38 +274,29 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
                         Row(
                           children: [
                             const Icon(
-                              Icons.calendar_today_outlined,
-                              size: 16,
+                              Icons.calendar_month_outlined,
+                              size: 17,
                               color: AppColors.textSecondary,
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Encontrado em: ${_formatDate(found.foundDate)}',
+                              'Encontrado em ${_formatDate(found.foundDate)}',
                               style: AppTextStyles.bodySmall(
                                 color: AppColors.textSecondary,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-
-                        // Botão principal: abre todas as fotos, descrição completa e contato LGPD
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            style: AppButtonStyles.primary(),
-                            icon: const Icon(
-                              Icons.visibility_outlined,
-                              size: 18,
-                            ),
-                            label: const Text('Ver Detalhes'),
-                            onPressed: () {
-                              context.push(
-                                '${AppRoutes.publicProfile(found.userId)}?foundId=${found.id}',
-                                extra: found,
-                              );
-                            },
-                          ),
+                        const SizedBox(height: 18),
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.visibility_outlined, size: 18),
+                          label: const Text('Ver detalhes e contato'),
+                          onPressed: () {
+                            context.push(
+                              '${AppRoutes.publicProfile(found.userId)}?foundId=${found.id}',
+                              extra: found,
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -368,42 +304,30 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-
-            // Card de Referência do Seu Pet Perdido
+            const SizedBox(height: 18),
             if (_lostPet != null)
               Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceLight,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'SEU PET PERDIDO',
+                      'Seu pet perdido',
                       style: AppTextStyles.sectionHeader(),
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: _lostPet!.imageUrl != null
-                              ? Image.network(
-                                  _lostPet!.imageUrl!,
-                                  width: 54,
-                                  height: 54,
-                                  fit: BoxFit.cover,
-                                )
-                              : Container(
-                                  width: 54,
-                                  height: 54,
-                                  color: Colors.grey.shade300,
-                                  child: const Icon(Icons.pets),
-                                ),
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox.square(
+                            dimension: 56,
+                            child: PetImage(url: _lostPet!.imageUrl),
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -417,9 +341,7 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
                               const SizedBox(height: 2),
                               Text(
                                 '${_lostPet!.breed ?? 'Sem raça'} • ${_formatLocationForDisplay(_lostPet!.lastLocation)}',
-                                style: AppTextStyles.bodySmall(
-                                  color: AppColors.textSecondary,
-                                ),
+                                style: AppTextStyles.bodySmall(),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -429,7 +351,7 @@ class _PetMatchDetailScreenState extends ConsumerState<PetMatchDetailScreen> {
                         IconButton(
                           tooltip: 'Ver todas as correspondências',
                           icon: const Icon(
-                            Icons.open_in_new,
+                            Icons.chevron_right_rounded,
                             color: AppColors.primary,
                           ),
                           onPressed: () {

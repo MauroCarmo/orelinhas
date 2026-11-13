@@ -1,4 +1,5 @@
 class AppRoutes {
+  static const String welcome = '/welcome';
   static const String login = '/login';
   static const String register = '/register';
   static const String forgotPassword = '/forgot-password';
@@ -6,27 +7,32 @@ class AppRoutes {
   static const String home = '/home';
   static const String profile = '/profile';
   static const String petLost = '/pet-lost';
+  static const String myAlerts = '/pet-lost?aba=meus';
   static const String petLostCreate = '/pet-lost/create';
   static const String petLostMap = '/pet-lost-map';
-  
+
   static const String petFound = '/pet-found';
   static const String petFoundCreate = '/pet-found/create';
   static const String petFoundMap = '/pet-found-map';
 
   static const String petAdoption = '/pet-adoption';
   static const String petAdoptionCreate = '/pet-adoption/create';
-  
+
   // Rota com parâmetro dinâmico
   static String petLostEdit(String id) => '/pet-lost/edit/$id';
+  static String petLostDetails(String id) => '/pet-lost/details/$id';
   static String petFoundEdit(String id) => '/pet-found/edit/$id';
   static String petAdoptionEdit(String id) => '/pet-adoption/edit/$id';
+
   // Rota para perfil público, com ID do usuário
   static String publicProfile(String userId) => '/public-profile/$userId';
+
   // Rota para correspondências de reconhecimento visual de pets (suporta foco no pet encontrado)
   static String petMatches(String id, {String? targetFoundPetId}) =>
       targetFoundPetId != null && targetFoundPetId.isNotEmpty
-          ? '/pet-matches/$id?foundId=$targetFoundPetId'
-          : '/pet-matches/$id';
+      ? '/pet-matches/$id?foundId=$targetFoundPetId'
+      : '/pet-matches/$id';
+
   // Rota para detalhes diretos de uma correspondência
   static String matchDetail({
     required String foundPetId,

@@ -3,33 +3,173 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/routing/app_routes.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
+import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart' show PetType;
+import '../../../pet_lost/presentation/widgets/pet_widgets.dart';
 import '../controllers/pet_adoption_controller.dart';
 import '../controllers/public_pet_adoption_controller.dart';
 import '../../domain/pet_adoption_entity.dart';
 
 class PetAdoptionListScreen extends ConsumerStatefulWidget {
-  const PetAdoptionListScreen({super.key});
+  final int initialTab;
+
+  const PetAdoptionListScreen({super.key, this.initialTab = 0});
 
   @override
-  ConsumerState<PetAdoptionListScreen> createState() => _PetAdoptionListScreenState();
+  ConsumerState<PetAdoptionListScreen> createState() =>
+      _PetAdoptionListScreenState();
 }
 
-class _PetAdoptionListScreenState extends ConsumerState<PetAdoptionListScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
+class _PetAdoptionListScreenState extends ConsumerState<PetAdoptionListScreen> {
+  late int _tab = widget.initialTab;
+  final _searchController = TextEditingController();
+  String _query = '';
+  PetType? _speciesFilter;
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _refresh() {
+    if (_tab == 0) {
+      ref.read(publicPetAdoptionControllerProvider.notifier).refreshAdoptions();
+    } else {
+      ref.read(petAdoptionControllerProvider.notifier).refreshAdoptions();
+    }
+  }
+
+  List<PetAdoptionAlertEntity> _applyFilters(
+    List<PetAdoptionAlertEntity> adoptions,
+  ) {
+    final q = _query.trim().toLowerCase();
+    return adoptions.where((a) {
+      if (_speciesFilter != null && a.species != _speciesFilter) return false;
+      if (q.isEmpty) return true;
+      return a.name.toLowerCase().contains(q) ||
+          a.region.toLowerCase().contains(q) ||
+          a.characteristics.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  Future<void> _confirmDelete(PetAdoptionAlertEntity adoption) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Excluir Anúncio', style: AppTextStyles.heading2()),
+        content: Text(
+          'Deseja realmente excluir permanentemente o anúncio de "${adoption.name}"?',
+          style: AppTextStyles.body(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: AppButtonStyles.danger(),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref
+          .read(petAdoptionControllerProvider.notifier)
+          .deleteAdoption(adoption.id);
+    }
+  }
+
+  Future<void> _confirmAdopted(PetAdoptionAlertEntity adoption) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Marcar como Adotado', style: AppTextStyles.heading2()),
+        content: Text(
+          'Deseja marcar "${adoption.name}" como Adotado? O anúncio sairá do feed público.',
+          style: AppTextStyles.body(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: AppButtonStyles.success(),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Sim, foi adotado'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref
+          .read(petAdoptionControllerProvider.notifier)
+          .markAsAdopted(adoption.id);
+    }
+  }
+
+  void _showMyAdoptionOptions(PetAdoptionAlertEntity adoption) {
+    final isAdopted = adoption.status == AdoptionStatus.adopted;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Editar anúncio'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  context.push(AppRoutes.petAdoptionEdit(adoption.id));
+                },
+              ),
+              if (!isAdopted)
+                ListTile(
+                  leading: const Icon(
+                    Icons.check_circle_outline,
+                    color: AppColors.success,
+                  ),
+                  title: const Text('Marcar como adotado'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _confirmAdopted(adoption);
+                  },
+                ),
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.error,
+                ),
+                title: const Text(
+                  'Excluir anúncio',
+                  style: TextStyle(color: AppColors.error),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _confirmDelete(adoption);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -45,7 +185,7 @@ class _PetAdoptionListScreenState extends ConsumerState<PetAdoptionListScreen>
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(errorMessage),
-                backgroundColor: Colors.red,
+                backgroundColor: AppColors.error,
               ),
             );
           },
@@ -53,475 +193,364 @@ class _PetAdoptionListScreenState extends ConsumerState<PetAdoptionListScreen>
       },
     );
 
+    final user = ref.watch(currentUserProvider);
+    final source = _tab == 0
+        ? ref
+              .watch(publicPetAdoptionControllerProvider)
+              .whenData(
+                (adoptions) => adoptions
+                    .where((a) => a.userId != (user?.id ?? ''))
+                    .toList(),
+              )
+        : ref.watch(petAdoptionControllerProvider);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Adoção de Pets'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: 'Voltar',
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go(AppRoutes.home),
+        ),
+        title: const Text('Adoção de pets'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              if (_tabController.index == 0) {
-                ref.read(publicPetAdoptionControllerProvider.notifier).refreshAdoptions();
-              } else {
-                ref.read(petAdoptionControllerProvider.notifier).refreshAdoptions();
-              }
-            },
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _refresh,
             tooltip: 'Atualizar',
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Pets para Adoção', icon: Icon(Icons.favorite)),
-            Tab(text: 'Meus Anúncios', icon: Icon(Icons.folder_shared)),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [
-          PublicAdoptionsTab(),
-          MyAdoptionsTab(),
+          const SizedBox(width: 4),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _query = v),
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: 'Buscar por nome, região ou característica',
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                isSearch: true,
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpar busca',
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _SegmentedTabs(
+              index: _tab,
+              labels: const ['Para adoção', 'Meus anúncios'],
+              onChanged: (i) => setState(() => _tab = i),
+            ),
+          ),
+          SizedBox(
+            height: 54,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+              children: [
+                _FilterChip(
+                  label: 'Todos',
+                  selected: _speciesFilter == null,
+                  onTap: () => setState(() => _speciesFilter = null),
+                ),
+                for (final type in PetType.values)
+                  _FilterChip(
+                    label: switch (type) {
+                      PetType.dog => 'Cachorros',
+                      PetType.cat => 'Gatos',
+                      PetType.other => 'Outros',
+                    },
+                    selected: _speciesFilter == type,
+                    onTap: () => setState(() => _speciesFilter = type),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: source.when(
+              data: (adoptions) {
+                final filtered = _applyFilters(adoptions);
+                if (adoptions.isEmpty) {
+                  return _tab == 0
+                      ? const EmptyState(
+                          icon: Icons.favorite_border_rounded,
+                          title: 'Nenhum pet para adoção no momento',
+                          message:
+                              'Volte mais tarde ou cadastre um pet que precisa de um lar.',
+                        )
+                      : EmptyState(
+                          icon: Icons.pets_outlined,
+                          title: 'Você ainda não anunciou pets para adoção',
+                          message:
+                              'Ajude um animalzinho a encontrar uma família responsável.',
+                          actionLabel: 'Anunciar pet para adoção',
+                          onAction: () =>
+                              context.push(AppRoutes.petAdoptionCreate),
+                        );
+                }
+                if (filtered.isEmpty) {
+                  return const EmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: 'Nenhum pet com esses filtros',
+                    message:
+                        'Tente outra região ou remova o filtro de espécie.',
+                  );
+                }
+                return RefreshIndicator(
+                  onRefresh: () async => _refresh(),
+                  child: GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 88),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 240,
+                          mainAxisSpacing: 14,
+                          crossAxisSpacing: 14,
+                          childAspectRatio: 0.72,
+                        ),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final adoption = filtered[index];
+                      return _AdoptionGridCard(
+                        adoption: adoption,
+                        onTap: () {
+                          if (_tab == 1) {
+                            _showMyAdoptionOptions(adoption);
+                          } else {
+                            context.push(
+                              AppRoutes.publicProfile(adoption.userId),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  ),
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, _) => EmptyState(
+                icon: Icons.wifi_off_rounded,
+                color: AppColors.error,
+                title: err is AppException
+                    ? err.message
+                    : 'Falha ao carregar adoções.',
+                message: 'Verifique sua conexão e tente novamente.',
+                actionLabel: 'Tentar novamente',
+                onAction: _refresh,
+              ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push(AppRoutes.petAdoptionCreate),
-        backgroundColor: Colors.green,
-        tooltip: 'Anunciar Pet para Adoção',
-        child: const Icon(Icons.add, color: Colors.white),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: Text('Anunciar Adoção', style: AppTextStyles.button()),
       ),
     );
   }
 }
 
-class PublicAdoptionsTab extends ConsumerStatefulWidget {
-  const PublicAdoptionsTab({super.key});
+class _AdoptionGridCard extends StatelessWidget {
+  final PetAdoptionAlertEntity adoption;
+  final VoidCallback onTap;
 
-  @override
-  ConsumerState<PublicAdoptionsTab> createState() => _PublicAdoptionsTabState();
-}
-
-class _PublicAdoptionsTabState extends ConsumerState<PublicAdoptionsTab> {
-  final _searchRegionController = TextEditingController();
-  PetType? _selectedSpeciesFilter;
-
-  @override
-  void dispose() {
-    _searchRegionController.dispose();
-    super.dispose();
-  }
+  const _AdoptionGridCard({required this.adoption, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final adoptionsState = ref.watch(publicPetAdoptionControllerProvider);
-    final user = ref.watch(currentUserProvider);
+    final isAdopted = adoption.status == AdoptionStatus.adopted;
+    final speciesLabel = switch (adoption.species) {
+      PetType.dog => 'Cachorro',
+      PetType.cat => 'Gato',
+      PetType.other => 'Outro',
+    };
 
-    return Column(
-      children: [
-        // Filtros
-        Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-              child: Row(
+    return Material(
+      color: AppColors.surfaceLight,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchRegionController,
-                      decoration: const InputDecoration(
-                        hintText: 'Filtrar por Região...',
-                        prefixIcon: Icon(Icons.search, size: 20),
-                        border: InputBorder.none,
+                  PetImage(url: adoption.imageUrl),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
                       ),
-                      onChanged: (val) => setState(() {}),
+                      decoration: BoxDecoration(
+                        color: isAdopted
+                            ? AppColors.textSecondary
+                            : AppColors.primary,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        isAdopted ? 'Adotado' : 'Adoção',
+                        style: AppTextStyles.label(color: Colors.white),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  DropdownButton<PetType?>(
-                    value: _selectedSpeciesFilter,
-                    hint: const Text('Espécie'),
-                    underline: const SizedBox(),
-                    items: const [
-                      DropdownMenuItem(
-                        value: null,
-                        child: Text('Todas'),
-                      ),
-                      DropdownMenuItem(
-                        value: PetType.dog,
-                        child: Text('Cachorro'),
-                      ),
-                      DropdownMenuItem(
-                        value: PetType.cat,
-                        child: Text('Gato'),
-                      ),
-                      DropdownMenuItem(
-                        value: PetType.other,
-                        child: Text('Outro'),
-                      ),
-                    ],
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedSpeciesFilter = val;
-                      });
-                    },
                   ),
                 ],
               ),
             ),
-          ),
-        ),
-        // Listagem
-        Expanded(
-          child: adoptionsState.when(
-            data: (adoptions) {
-              // Filtrar anúncios do próprio usuário (feed público deve mostrar dos outros)
-              var list = adoptions.where((a) => a.userId != (user?.id ?? '')).toList();
-
-              // Filtro por Região
-              final searchRegion = _searchRegionController.text.toLowerCase().trim();
-              if (searchRegion.isNotEmpty) {
-                list = list.where((a) => a.region.toLowerCase().contains(searchRegion)).toList();
-              }
-
-              // Filtro por Espécie
-              if (_selectedSpeciesFilter != null) {
-                list = list.where((a) => a.species == _selectedSpeciesFilter).toList();
-              }
-
-              return _AdoptionListBuilder(
-                adoptions: list,
-                emptyMessage: 'Nenhum pet disponível para adoção no momento.',
-                isMyList: false,
-                onRefresh: () => ref.read(publicPetAdoptionControllerProvider.notifier).refreshAdoptions(),
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, _) {
-              final errMsg = err is AppException ? err.message : 'Falha ao carregar adoções.';
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
-                    const SizedBox(height: 16),
-                    Text(errMsg, style: const TextStyle(color: Colors.red)),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => ref.read(publicPetAdoptionControllerProvider.notifier).refreshAdoptions(),
-                      child: const Text('Tentar Novamente'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class MyAdoptionsTab extends ConsumerWidget {
-  const MyAdoptionsTab({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final adoptionsState = ref.watch(petAdoptionControllerProvider);
-
-    return adoptionsState.when(
-      data: (adoptions) {
-        return _AdoptionListBuilder(
-          adoptions: adoptions,
-          emptyMessage: 'Você não cadastrou nenhum pet para adoção ainda.',
-          isMyList: true,
-          onRefresh: () => ref.read(petAdoptionControllerProvider.notifier).refreshAdoptions(),
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, _) {
-        final errMsg = err is AppException ? err.message : 'Falha ao carregar seus anúncios.';
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
-              const SizedBox(height: 16),
-              Text(errMsg, style: const TextStyle(color: Colors.red)),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => ref.read(petAdoptionControllerProvider.notifier).refreshAdoptions(),
-                child: const Text('Tentar Novamente'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    adoption.name,
+                    style: AppTextStyles.heading3(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$speciesLabel • ${adoption.isVaccinated ? 'Vacinado' : 'Sem vacina inf.'}',
+                    style: AppTextStyles.bodySmall(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.place_outlined,
+                        size: 14,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          adoption.region,
+                          style: AppTextStyles.bodySmall(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
-        );
-      },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _AdoptionListBuilder extends ConsumerWidget {
-  final List<PetAdoptionAlertEntity> adoptions;
-  final String emptyMessage;
-  final bool isMyList;
-  final VoidCallback onRefresh;
+class _SegmentedTabs extends StatelessWidget {
+  final int index;
+  final List<String> labels;
+  final ValueChanged<int> onChanged;
 
-  const _AdoptionListBuilder({
-    required this.adoptions,
-    required this.emptyMessage,
-    required this.isMyList,
-    required this.onRefresh,
+  const _SegmentedTabs({
+    required this.index,
+    required this.labels,
+    required this.onChanged,
   });
 
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref, PetAdoptionAlertEntity adoption) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Excluir Anúncio'),
-        content: const Text('Deseja realmente excluir permanentemente este anúncio de adoção?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Excluir', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await ref.read(petAdoptionControllerProvider.notifier).deleteAdoption(adoption.id);
-    }
-  }
-
-  Future<void> _confirmAdopted(BuildContext context, WidgetRef ref, PetAdoptionAlertEntity adoption) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Marcar como Adotado'),
-        content: const Text(
-          'Deseja marcar este pet como Adotado? O anúncio sairá do feed público, mas permanecerá registrado para métricas.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Marcar como Adotado', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await ref.read(petAdoptionControllerProvider.notifier).markAsAdopted(adoption.id);
-    }
-  }
-
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (adoptions.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.favorite_border, size: 72, color: Colors.blueGrey),
-              const SizedBox(height: 16),
-              Text(
-                emptyMessage,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(12.0),
-      itemCount: adoptions.length,
-      itemBuilder: (context, index) {
-        final adoption = adoptions[index];
-        final isAdopted = adoption.status == AdoptionStatus.adopted;
-
-        final speciesLabel = adoption.species == PetType.dog
-            ? 'Cachorro'
-            : adoption.species == PetType.cat
-                ? 'Gato'
-                : 'Outro';
-
-        return Card(
-          elevation: 3,
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (adoption.imageUrl.isNotEmpty)
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: Image.network(
-                    adoption.imageUrl,
-                    height: 200,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      height: 200,
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.broken_image, size: 64, color: Colors.grey),
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => onChanged(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  decoration: BoxDecoration(
+                    color: i == index
+                        ? AppColors.surfaceLight
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(26),
+                    boxShadow: i == index
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withAlpha(25),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    labels[i],
+                    style: AppTextStyles.label(
+                      color: i == index
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
                     ),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            adoption.name,
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            if (isAdopted)
-                              Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.green[100],
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'Adotado 🎉',
-                                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
-                                ),
-                              ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: adoption.species == PetType.dog
-                                    ? Colors.blue[100]
-                                    : adoption.species == PetType.cat
-                                        ? Colors.orange[100]
-                                        : Colors.green[100],
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                speciesLabel,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: adoption.species == PetType.dog
-                                      ? Colors.blue[900]
-                                      : adoption.species == PetType.cat
-                                          ? Colors.orange[900]
-                                          : Colors.green[900],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.health_and_safety, size: 16, color: Colors.teal),
-                        const SizedBox(width: 4),
-                        Text(
-                          adoption.isVaccinated ? 'Vacinado' : 'Não Vacinado / Informação não disponível',
-                          style: const TextStyle(fontSize: 13, color: Colors.black87),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const Divider(),
-                    const SizedBox(height: 4),
-                    Text(
-                      adoption.characteristics,
-                      style: const TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on, size: 16, color: Colors.redAccent),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            'Região: ${adoption.region}',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (isMyList)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton.icon(
-                            icon: const Icon(Icons.edit, size: 18),
-                            label: const Text('Editar'),
-                            onPressed: () => context.push(AppRoutes.petAdoptionEdit(adoption.id)),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                            label: const Text('Excluir', style: TextStyle(color: Colors.red)),
-                            onPressed: () => _confirmDelete(context, ref, adoption),
-                          ),
-                          if (!isAdopted) ...[
-                            const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                              icon: const Icon(Icons.check_circle, size: 18, color: Colors.white),
-                              label: const Text('Adotado!', style: TextStyle(color: Colors.white)),
-                              onPressed: () => _confirmAdopted(context, ref, adoption),
-                            ),
-                          ],
-                        ],
-                      )
-                    else
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                            icon: const Icon(Icons.person, color: Colors.white, size: 18),
-                            label: const Text('Ver Anunciante', style: TextStyle(color: Colors.white)),
-                            onPressed: () => context.push(AppRoutes.publicProfile(adoption.userId)),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
               ),
-            ],
-          ),
-        );
-      },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        labelStyle: AppTextStyles.label(
+          color: selected ? Colors.white : AppColors.textPrimary,
+        ),
+        side: BorderSide(
+          color: selected ? AppColors.primary : AppColors.border,
+        ),
+      ),
     );
   }
 }

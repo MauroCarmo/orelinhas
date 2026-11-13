@@ -5,10 +5,13 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
+import '../../../pet_lost/domain/pet_lost_entity.dart' show PetType;
+import '../../../pet_lost/presentation/widgets/pet_widgets.dart';
 import '../controllers/pet_adoption_controller.dart';
 import '../../domain/pet_adoption_entity.dart';
-import '../../../pet_lost/domain/pet_lost_entity.dart' show PetType;
 
 class CreatePetAdoptionScreen extends ConsumerStatefulWidget {
   final String? alertId;
@@ -20,7 +23,8 @@ class CreatePetAdoptionScreen extends ConsumerStatefulWidget {
       _CreatePetAdoptionScreenState();
 }
 
-class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScreen> {
+class _CreatePetAdoptionScreenState
+    extends ConsumerState<CreatePetAdoptionScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _nameController;
@@ -31,7 +35,6 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
   bool _isVaccinated = false;
   bool _controllersInitialized = false;
 
-  // Imagem
   Uint8List? _selectedImageBytes;
   String? _selectedImageFileName;
   String? _existingImageUrl;
@@ -71,9 +74,9 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
       builder: (context) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+            Icon(Icons.info_outline_rounded, color: AppColors.error),
             SizedBox(width: 8),
-            Text('Erros de Validação'),
+            Text('Falta pouco'),
           ],
         ),
         content: SingleChildScrollView(
@@ -169,13 +172,12 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Usuário não autenticado.'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         ),
       );
       return;
     }
 
-    // Validação prévia: imagem obrigatória
     if (_selectedImageBytes == null &&
         (_existingImageUrl == null || _existingImageUrl!.isEmpty)) {
       _showErrorDialog(context, ['A foto do pet é obrigatória.']);
@@ -228,7 +230,7 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
                     ? 'Anúncio atualizado com sucesso!'
                     : 'Anúncio de adoção cadastrado com sucesso!',
               ),
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.success,
             ),
           );
           context.pop();
@@ -238,7 +240,7 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
               ? err.message
               : 'Erro ao salvar anúncio.';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
+            SnackBar(content: Text(errMsg), backgroundColor: AppColors.error),
           );
         }
       },
@@ -248,7 +250,9 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
       controllerState.maybeWhen(
         data: (adoptions) {
           try {
-            final adoption = adoptions.firstWhere((e) => e.id == widget.alertId);
+            final adoption = adoptions.firstWhere(
+              (e) => e.id == widget.alertId,
+            );
             _initializeControllers(adoption);
           } catch (_) {}
         },
@@ -257,152 +261,125 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
     }
 
     final isLoading = controllerState.isLoading;
+    final isEditing = widget.alertId != null;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.alertId != null ? 'Editar Anúncio' : 'Cadastrar Pet para Adoção',
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: 'Voltar',
+          onPressed: () => context.pop(),
         ),
+        title: Text(isEditing ? 'Editar anúncio' : 'Anunciar para adoção'),
       ),
-      body: isLoading && !_controllersInitialized && widget.alertId != null
+      body: isLoading && !_controllersInitialized && isEditing
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'Informações do Pet',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+                    _buildImagePicker(isLoading),
+                    const SizedBox(height: 22),
+                    const FieldLabel('Nome do pet *'),
                     TextFormField(
                       controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nome do Pet *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.badge),
+                      decoration: AppInputDecoration.defaultDecoration(
+                        labelText: '',
+                        hintText: 'Ex.: Thor, Nina, Pipoca',
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                      enabled: !isLoading,
+                    ),
+                    const SizedBox(height: 18),
+                    const FieldLabel('Espécie *'),
+                    Row(
+                      children: [
+                        for (final type in PetType.values) ...[
+                          Expanded(
+                            child: _SpeciesOption(
+                              label: switch (type) {
+                                PetType.dog => 'Cachorro',
+                                PetType.cat => 'Gato',
+                                PetType.other => 'Outro',
+                              },
+                              selected: _selectedSpecies == type,
+                              onTap: isLoading
+                                  ? null
+                                  : () =>
+                                        setState(() => _selectedSpecies = type),
+                            ),
+                          ),
+                          if (type != PetType.values.last)
+                            const SizedBox(width: 10),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    const FieldLabel('Região / Cidade *'),
+                    TextFormField(
+                      controller: _regionController,
+                      decoration: AppInputDecoration.defaultDecoration(
+                        labelText: '',
+                        hintText: 'Ex.: São Paulo, Vila Mariana',
+                        prefixIcon: const Icon(Icons.place_outlined, size: 20),
                       ),
                       enabled: !isLoading,
                     ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<PetType>(
-                      initialValue: _selectedSpecies,
-                      decoration: const InputDecoration(
-                        labelText: 'Espécie *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: PetType.dog,
-                          child: Text('Cachorro'),
-                        ),
-                        DropdownMenuItem(
-                          value: PetType.cat,
-                          child: Text('Gato'),
-                        ),
-                        DropdownMenuItem(
-                          value: PetType.other,
-                          child: Text('Outro'),
-                        ),
-                      ],
-                      onChanged: isLoading
-                          ? null
-                          : (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedSpecies = val;
-                                });
-                              }
-                            },
-                    ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
+                    const FieldLabel('Características detalhadas *'),
                     TextFormField(
                       controller: _characteristicsController,
-                      decoration: const InputDecoration(
-                        labelText: 'Características Detalhadas *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.description),
-                        helperText: 'Ex: Brincalhão, dócil com crianças. Mínimo 10 carac.',
+                      decoration: AppInputDecoration.defaultDecoration(
+                        labelText: '',
+                        hintText:
+                            'Brincalhão, dócil com crianças, porte médio…',
+                        helperText: 'Mínimo de 10 caracteres.',
                       ),
                       maxLines: 3,
                       maxLength: 255,
                       enabled: !isLoading,
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _regionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Região / Cidade *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.location_on),
-                        helperText: 'Ex: São Paulo, Zona Sul ou Vila Mariana',
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(18),
                       ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 16),
-                    SwitchListTile(
-                      title: const Text('Status de Vacinação'),
-                      subtitle: const Text('O pet está vacinado?'),
-                      value: _isVaccinated,
-                      onChanged: isLoading
-                          ? null
-                          : (val) {
-                              setState(() {
-                                _isVaccinated = val;
-                              });
-                            },
-                      secondary: const Icon(Icons.health_and_safety),
-                    ),
-                    const SizedBox(height: 16),
-
-                    const Text(
-                      'Foto do Pet *',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey,
+                      child: SwitchListTile(
+                        title: Text(
+                          'Pet vacinado',
+                          style: AppTextStyles.label(),
+                        ),
+                        subtitle: Text(
+                          'Informe se o pet já recebeu vacinas',
+                          style: AppTextStyles.bodySmall(),
+                        ),
+                        value: _isVaccinated,
+                        activeThumbColor: AppColors.primary,
+                        onChanged: isLoading
+                            ? null
+                            : (val) => setState(() => _isVaccinated = val),
+                        secondary: const Icon(
+                          Icons.health_and_safety_outlined,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    _buildImagePicker(isLoading),
-                    const SizedBox(height: 32),
-
+                    const SizedBox(height: 28),
                     if (isLoading)
                       const Center(child: CircularProgressIndicator())
-                    else ...[
+                    else
                       ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: Colors.green,
-                        ),
                         onPressed: _submitForm,
                         child: Text(
-                          widget.alertId != null
-                              ? 'Salvar Alterações'
-                              : 'Cadastrar para Adoção',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
+                          isEditing
+                              ? 'Salvar alterações'
+                              : 'Publicar para adoção',
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        onPressed: () => context.pop(),
-                        child: const Text('Cancelar'),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -415,75 +392,197 @@ class _CreatePetAdoptionScreenState extends ConsumerState<CreatePetAdoptionScree
         _selectedImageBytes != null ||
         (_existingImageUrl != null && _existingImageUrl!.isNotEmpty);
 
+    if (!hasPreview) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: isLoading ? null : _showImageSourceSheet,
+        child: CustomPaint(
+          painter: _DashedBorderPainter(),
+          child: SizedBox(
+            height: 170,
+            width: double.infinity,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primarySoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.photo_camera_outlined,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('Adicione uma foto do pet', style: AppTextStyles.label()),
+                const SizedBox(height: 2),
+                Text(
+                  'Fotos nítidas aumentam as chances de adoção',
+                  style: AppTextStyles.bodySmall(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Column(
       children: [
-        if (hasPreview)
-          Container(
-            height: 200,
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: SizedBox(
+            height: 210,
             width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(11),
-              child: _selectedImageBytes != null
-                  ? Image.memory(_selectedImageBytes!, fit: BoxFit.cover)
-                  : Image.network(
-                      _existingImageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const Icon(Icons.broken_image),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _selectedImageBytes != null
+                    ? Image.memory(_selectedImageBytes!, fit: BoxFit.cover)
+                    : PetImage(url: _existingImageUrl),
+                Positioned(
+                  right: 10,
+                  bottom: 10,
+                  child: Material(
+                    color: Colors.white,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: 'Trocar foto',
+                      icon: const Icon(
+                        Icons.photo_camera_outlined,
+                        color: AppColors.primary,
+                      ),
+                      onPressed: isLoading ? null : _showImageSourceSheet,
                     ),
-            ),
-          )
-        else
-          Container(
-            height: 120,
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Icon(Icons.add_a_photo, size: 48, color: Colors.grey),
+                  ),
+                ),
+              ],
             ),
           ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Câmera'),
-              onPressed: isLoading
-                  ? null
-                  : () => _pickImage(ImageSource.camera),
-            ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.photo_library),
-              label: const Text('Galeria'),
-              onPressed: isLoading
-                  ? null
-                  : () => _pickImage(ImageSource.gallery),
-            ),
-          ],
         ),
-        if (hasPreview)
-          TextButton(
-            onPressed: isLoading
-                ? null
-                : () {
-                    setState(() {
-                      _selectedImageBytes = null;
-                      _selectedImageFileName = null;
-                      _existingImageUrl = null;
-                    });
-                  },
-            child: const Text('Remover imagem'),
-          ),
+        TextButton.icon(
+          icon: const Icon(Icons.delete_outline_rounded, size: 18),
+          style: TextButton.styleFrom(foregroundColor: AppColors.error),
+          onPressed: isLoading
+              ? null
+              : () {
+                  setState(() {
+                    _selectedImageBytes = null;
+                    _selectedImageFileName = null;
+                    _existingImageUrl = null;
+                  });
+                },
+          label: const Text('Remover foto'),
+        ),
       ],
     );
   }
+
+  void _showImageSourceSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surfaceLight,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Tirar foto'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Escolher da galeria'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpeciesOption extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _SpeciesOption({
+    required this.label,
+    required this.selected,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.primary : AppColors.surfaceLight,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected ? AppColors.primary : AppColors.border,
+        ),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: Text(
+              label,
+              style: AppTextStyles.label(
+                color: selected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.primary.withAlpha(110)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(20),
+    );
+    final path = Path()..addRRect(rrect);
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        canvas.drawPath(metric.extractPath(distance, distance + 7), paint);
+        distance += 13;
+      }
+    }
+    canvas.drawRRect(
+      rrect,
+      Paint()..color = AppColors.primarySoft.withAlpha(90),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

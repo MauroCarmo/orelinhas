@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
+import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../../core/validation/sanitizers.dart';
 import '../../../pet_found/data/pet_found_repository.dart';
 import '../../../pet_found/domain/pet_found_entity.dart';
@@ -194,21 +197,18 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
     final hasAlert = _resolvedLostAlert != null || _resolvedFoundAlert != null;
 
     return Scaffold(
-      backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
-        title: Text(
-          hasAlert ? 'Detalhes do Alerta' : 'Responsável pelo Anúncio',
-          style: AppTextStyles.heading2(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: 'Voltar',
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go(AppRoutes.home),
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        title: Text(hasAlert ? 'Detalhes do alerta' : 'Falar com o tutor'),
       ),
       body: profileAsync.when(
         data: (profile) => _buildContent(context, profile),
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) {
           if (hasAlert) {
             return _buildContent(context, null);
@@ -224,7 +224,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(
-                    Icons.error_outline,
+                    Icons.error_outline_rounded,
                     size: 64,
                     color: AppColors.error,
                   ),
@@ -279,18 +279,17 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
               : '');
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // --- 1. Galeria de Fotos do Pet (até 3) ---
           if (_galleryUrls.isNotEmpty) ...[
             Container(
-              height: 270,
+              height: 280,
               decoration: BoxDecoration(
                 color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(24),
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
@@ -408,8 +407,8 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                             height: 8,
                             decoration: BoxDecoration(
                               color: active
-                                  ? AppColors.accent
-                                  : Colors.white.withAlpha(180),
+                                  ? AppColors.primary
+                                  : Colors.white.withAlpha(200),
                               borderRadius: BorderRadius.circular(8),
                             ),
                           );
@@ -425,11 +424,10 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
           // --- 2. Informações Detalhadas do Pet ---
           if (lost != null || found != null) ...[
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -448,11 +446,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: petType == PetType.dog
-                                ? Colors.blue.withAlpha(35)
-                                : petType == PetType.cat
-                                ? Colors.orange.withAlpha(35)
-                                : Colors.purple.withAlpha(35),
+                            color: AppColors.primarySoft,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
@@ -462,11 +456,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                                 ? 'Gato'
                                 : 'Outro',
                             style: AppTextStyles.label(
-                              color: petType == PetType.dog
-                                  ? Colors.blue.shade800
-                                  : petType == PetType.cat
-                                  ? Colors.orange.shade800
-                                  : Colors.purple.shade800,
+                              color: AppColors.primary,
                             ),
                           ),
                         ),
@@ -476,14 +466,11 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                       (age != null && age.isNotEmpty)) ...[
                     const SizedBox(height: 10),
                     Wrap(
-                      spacing: 12,
+                      spacing: 10,
                       runSpacing: 6,
                       children: [
                         if (breed != null && breed.isNotEmpty)
-                          _infoChip(
-                            Icons.cruelty_free_outlined,
-                            'Raça: $breed',
-                          ),
+                          _infoChip(Icons.pets_outlined, 'Raça: $breed'),
                         if (age != null && age.isNotEmpty)
                           _infoChip(
                             Icons.hourglass_empty_outlined,
@@ -499,7 +486,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                     const SizedBox(height: 14),
                     const Divider(color: AppColors.border, height: 1),
                     const SizedBox(height: 14),
-                    Text('DESCRIÇÃO', style: AppTextStyles.sectionHeader()),
+                    Text('Sobre o pet', style: AppTextStyles.sectionHeader()),
                     const SizedBox(height: 6),
                     Text(
                       description,
@@ -513,7 +500,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.location_on_outlined,
+                        Icons.place_outlined,
                         size: 20,
                         color: lost != null
                             ? AppColors.error
@@ -526,7 +513,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                           children: [
                             Text(
                               lost != null
-                                  ? 'Local do desaparecimento'
+                                  ? 'Último local visto'
                                   : 'Local onde foi encontrado',
                               style: AppTextStyles.label(
                                 color: AppColors.textSecondary,
@@ -549,15 +536,15 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                     Row(
                       children: [
                         const Icon(
-                          Icons.calendar_today_outlined,
+                          Icons.calendar_month_outlined,
                           size: 18,
                           color: AppColors.primary,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           lost != null
-                              ? 'Desapareceu em: ${_formatDate(eventDate)}'
-                              : 'Encontrado em: ${_formatDate(eventDate)}',
+                              ? 'Desapareceu em ${_formatDate(eventDate)}'
+                              : 'Encontrado em ${_formatDate(eventDate)}',
                           style: AppTextStyles.body(
                             color: AppColors.textPrimary,
                           ),
@@ -573,17 +560,16 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
 
           // --- 3. Card do Responsável & Contato (Protegido pela LGPD) ---
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'RESPONSÁVEL PELO ANÚNCIO',
+                  'Responsável pelo anúncio',
                   style: AppTextStyles.sectionHeader(),
                 ),
                 const SizedBox(height: 12),
@@ -591,7 +577,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                   children: [
                     CircleAvatar(
                       radius: 26,
-                      backgroundColor: AppColors.primary.withAlpha(25),
+                      backgroundColor: AppColors.primarySoft,
                       backgroundImage:
                           profile?.avatarUrl != null &&
                               profile!.avatarUrl!.isNotEmpty
@@ -601,7 +587,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                           profile?.avatarUrl == null ||
                               profile!.avatarUrl!.isEmpty
                           ? const Icon(
-                              Icons.person,
+                              Icons.person_rounded,
                               size: 28,
                               color: AppColors.primary,
                             )
@@ -660,59 +646,34 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                 ),
                 if (phoneDigits.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(0, 48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.phone, size: 20),
-                          label: const Text('Ligar'),
-                          onPressed: () =>
-                              _launchUri(Uri.parse('tel:$phoneDigits')),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF25D366),
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(0, 48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.chat, size: 20),
-                          label: const Text('WhatsApp'),
-                          onPressed: () {
-                            final msg = lost != null
-                                ? 'Olá! Vi o alerta de ${lost.petName} no Orelinhas e gostaria de ajudar.'
-                                : 'Olá! Vi o registro do pet encontrado no Orelinhas e acredito que seja meu.';
-                            final text = Uri.encodeComponent(msg);
-                            _launchUri(
-                              Uri.parse(
-                                'https://wa.me/55$phoneDigits?text=$text',
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                  ElevatedButton.icon(
+                    style: AppButtonStyles.primary(
+                      backgroundColor: const Color(0xFF1FAF5A),
+                    ),
+                    icon: const Icon(Icons.chat_rounded, size: 20),
+                    label: const Text('Conversar no WhatsApp'),
+                    onPressed: () {
+                      final msg = lost != null
+                          ? 'Olá! Vi o alerta de ${lost.petName} no Orelinhas e gostaria de ajudar.'
+                          : 'Olá! Vi o registro do pet encontrado no Orelinhas e acredito que seja meu.';
+                      final text = Uri.encodeComponent(msg);
+                      _launchUri(
+                        Uri.parse('https://wa.me/55$phoneDigits?text=$text'),
+                      );
+                    },
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.phone_outlined, size: 20),
+                    label: const Text('Ligar'),
+                    onPressed: () => _launchUri(Uri.parse('tel:$phoneDigits')),
+                  ),
+                  const SizedBox(height: 14),
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppColors.scaffoldLight,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -737,17 +698,16 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                 ] else ...[
                   const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppColors.scaffoldLight,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Icon(
-                          Icons.info_outline,
+                          Icons.info_outline_rounded,
                           size: 16,
                           color: AppColors.textSecondary,
                         ),
@@ -769,7 +729,6 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 24),
         ],
       ),
     );
@@ -780,8 +739,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.scaffoldLight,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

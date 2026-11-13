@@ -18,6 +18,7 @@ import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../../../../core/validation/sanitizers.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart' show PetType;
+import '../../../pet_lost/presentation/widgets/pet_widgets.dart';
 import '../../../pet_recognition/data/services/supabase_pet_recognition_service.dart';
 import '../controllers/pet_found_controller.dart';
 import '../../domain/pet_found_entity.dart';
@@ -91,6 +92,9 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
   bool _controllersInitialized = false;
   bool _isSyncingLocation = false;
   bool _isUploadingPhotos = false;
+
+  int _step = 0;
+  static const _stepTitles = ['Pet', 'Encontro', 'Finalizar'];
 
   LatLng? _selectedLocation;
   final MapController _mapController = MapController();
@@ -166,9 +170,11 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     if (alert.latitude != null && alert.longitude != null) {
       _selectedLocation = LatLng(alert.latitude!, alert.longitude!);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _selectedLocation != null) {
-          _mapController.move(_selectedLocation!, 15.0);
-        }
+        try {
+          if (mounted && _selectedLocation != null) {
+            _mapController.move(_selectedLocation!, 15.0);
+          }
+        } catch (_) {}
       });
     }
 
@@ -407,6 +413,23 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     return parts.join(' | ');
   }
 
+  String _composeReadableLocation() {
+    final street = _streetController.text.trim();
+    final district = _districtController.text.trim();
+    final city = _cityController.text.trim();
+    final state = (_selectedState ?? '').trim();
+    final cityState = [
+      if (city.isNotEmpty) city,
+      if (state.isNotEmpty) state,
+    ].join('/');
+    final parts = [
+      if (street.isNotEmpty) street,
+      if (district.isNotEmpty) district,
+      if (cityState.isNotEmpty) cityState,
+    ];
+    return parts.isEmpty ? 'Local não informado' : parts.join(', ');
+  }
+
   String _formatDate(DateTime date) {
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
@@ -420,18 +443,6 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.primary,
-              onPrimary: AppColors.accent,
-              onSurface: AppColors.textPrimary,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
     if (picked != null && picked != _selectedDate) {
       setState(() {
@@ -444,12 +455,11 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.warning_amber_rounded, color: AppColors.error),
-            const SizedBox(width: 8),
-            Text('Erros de Validação', style: AppTextStyles.heading3()),
+            Icon(Icons.info_outline_rounded, color: AppColors.error),
+            SizedBox(width: 8),
+            Text('Falta pouco'),
           ],
         ),
         content: SingleChildScrollView(
@@ -467,7 +477,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
                           '• ',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Expanded(child: Text(err, style: AppTextStyles.body())),
+                        Expanded(child: Text(err)),
                       ],
                     ),
                   ),
@@ -476,8 +486,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
           ),
         ),
         actions: [
-          ElevatedButton(
-            style: AppButtonStyles.primary(),
+          TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Entendido'),
           ),
@@ -729,672 +738,822 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     }
 
     final isLoading = controllerState.isLoading || _isUploadingPhotos;
+    final isEditing = widget.alertId != null;
+    final isLastStep = _step == _stepTitles.length - 1;
 
     return Scaffold(
-      backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
-        title: Text(
-          widget.alertId != null
-              ? 'Editar Pet Encontrado'
-              : 'Cadastrar Pet Encontrado',
-          style: AppTextStyles.heading2(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: _step == 0 ? 'Voltar' : 'Etapa anterior',
+          onPressed: () {
+            if (_step > 0) {
+              setState(() => _step--);
+            } else {
+              context.pop();
+            }
+          },
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        title: Text(
+          isEditing ? 'Editar pet encontrado' : 'Registrar pet encontrado',
+        ),
       ),
-      body: isLoading && !_controllersInitialized && widget.alertId != null
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // --- Seção 1: Informações do Pet ---
-                    Text(
-                      'INFORMAÇÕES DO PET ENCONTRADO',
-                      style: AppTextStyles.sectionHeader(),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          DropdownButtonFormField<PetType>(
-                            initialValue: _selectedType,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText: 'Tipo do Pet *',
-                              prefixIcon: const Icon(
-                                Icons.category_outlined,
-                                size: 20,
-                              ),
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: PetType.dog,
-                                child: Text('Cachorro'),
-                              ),
-                              DropdownMenuItem(
-                                value: PetType.cat,
-                                child: Text('Gato'),
-                              ),
-                              DropdownMenuItem(
-                                value: PetType.other,
-                                child: Text('Outro'),
-                              ),
-                            ],
-                            onChanged: isLoading
-                                ? null
-                                : (val) {
-                                    if (val != null) {
-                                      setState(() {
-                                        _selectedType = val;
-                                      });
-                                    }
-                                  },
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _breedController,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText: 'Raça Aparente (Opcional)',
-                              prefixIcon: const Icon(
-                                Icons.cruelty_free_outlined,
-                                size: 20,
-                              ),
-                            ),
-                            enabled: !isLoading,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _apparentAgeController,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText: 'Idade Aparente (Opcional)',
-                              helperText: 'Ex: filhote, adulto, idoso',
-                              prefixIcon: const Icon(
-                                Icons.hourglass_empty_outlined,
-                                size: 20,
-                              ),
-                            ),
-                            enabled: !isLoading,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // --- Seção 2: Detalhes do Encontro & Endereço Sincronizado ---
-                    Text(
-                      'DETALHES DO ENCONTRO',
-                      style: AppTextStyles.sectionHeader(),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextFormField(
-                            controller: _descriptionController,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText:
-                                  'Descrição / Características (Opcional)',
-                              helperText:
-                                  'Cor, coleira, estado do animal, comportamento, etc.',
-                              prefixIcon: const Icon(
-                                Icons.notes_outlined,
-                                size: 20,
-                              ),
-                            ),
-                            maxLines: 3,
-                            maxLength: 255,
-                            enabled: !isLoading,
-                          ),
-                          const SizedBox(height: 16),
-
-                          // CEP sincronizado
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _cepController,
-                                  decoration: AppInputDecoration.defaultDecoration(
-                                    labelText: 'CEP (Opcional)',
-                                    helperText:
-                                        'Preenche endereço e centraliza o mapa',
-                                    prefixIcon: const Icon(
-                                      Icons.markunread_mailbox_outlined,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [CepInputFormatter()],
-                                  onChanged: (val) {
-                                    if (AppSanitizers.digitsOnly(val).length ==
-                                        8) {
-                                      _lookupCepAndSyncMap(val);
-                                    }
-                                  },
-                                  enabled: !isLoading,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                height: 52,
-                                child: OutlinedButton(
-                                  style: AppButtonStyles.outlined(),
-                                  onPressed: isLoading || _isSyncingLocation
-                                      ? null
-                                      : () => _lookupCepAndSyncMap(),
-                                  child: _isSyncingLocation
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.search),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _streetController,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText: 'Rua / Logradouro (Opcional)',
-                              prefixIcon: const Icon(
-                                Icons.signpost_outlined,
-                                size: 20,
-                              ),
-                            ),
-                            enabled: !isLoading,
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _districtController,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText: 'Bairro (Opcional)',
-                              prefixIcon: const Icon(
-                                Icons.holiday_village_outlined,
-                                size: 20,
-                              ),
-                            ),
-                            enabled: !isLoading,
-                          ),
-                          const SizedBox(height: 16),
-
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: TextFormField(
-                                  controller: _cityController,
-                                  decoration:
-                                      AppInputDecoration.defaultDecoration(
-                                        labelText: 'Cidade *',
-                                        prefixIcon: const Icon(
-                                          Icons.location_city_outlined,
-                                          size: 20,
-                                        ),
-                                      ),
-                                  enabled: !isLoading,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 1,
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: _selectedState,
-                                  decoration:
-                                      AppInputDecoration.defaultDecoration(
-                                        labelText: 'UF *',
-                                      ),
-                                  items: _brazilStates
-                                      .map(
-                                        (uf) => DropdownMenuItem(
-                                          value: uf,
-                                          child: Text(uf),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: isLoading
-                                      ? null
-                                      : (val) {
-                                          setState(() => _selectedState = val);
-                                        },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _referenceController,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText:
-                                  'Complemento / Ponto de referência (Opcional)',
-                              helperText:
-                                  'Ex: Próximo à praça central ou mercado',
-                              prefixIcon: const Icon(
-                                Icons.location_on_outlined,
-                                size: 20,
-                              ),
-                            ),
-                            enabled: !isLoading,
-                          ),
-                          const SizedBox(height: 6),
-
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton.icon(
-                              onPressed: isLoading || _isSyncingLocation
-                                  ? null
-                                  : _syncMapFromAddressFields,
-                              icon: const Icon(
-                                Icons.pin_drop_outlined,
-                                size: 18,
-                              ),
-                              label: const Text('Localizar endereço no mapa'),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-
-                          InkWell(
-                            onTap: isLoading
-                                ? null
-                                : () => _selectDate(context),
-                            borderRadius: BorderRadius.circular(11),
-                            child: InputDecorator(
-                              decoration: AppInputDecoration.defaultDecoration(
-                                labelText: 'Data em que foi encontrado *',
-                                prefixIcon: const Icon(
-                                  Icons.calendar_today_outlined,
-                                  size: 20,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    _formatDate(_selectedDate),
-                                    style: AppTextStyles.body(),
-                                  ),
-                                  const Icon(
-                                    Icons.calendar_month,
-                                    color: AppColors.primary,
-                                    size: 20,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _contactController,
-                            decoration: AppInputDecoration.defaultDecoration(
-                              labelText: 'Telefone de Contato (Opcional)',
-                              helperText:
-                                  'Preencha apenas se acolheu o pet ou puder atender',
-                              prefixIcon:
-                                  const Icon(Icons.phone_outlined, size: 20),
-                            ),
-                            keyboardType: TextInputType.phone,
-                            inputFormatters: [PhoneInputFormatter()],
-                            enabled: !isLoading,
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppColors.scaffoldLight,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(
-                                  Icons.privacy_tip_outlined,
-                                  size: 16,
-                                  color: AppColors.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Proteção de Dados (LGPD): O telefone é opcional. Caso você opte por informá-lo, ele será exibido no anúncio exclusivamente para que o tutor do pet entre em contato.',
-                                    style: AppTextStyles.bodySmall(
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // --- Seção 3: Fotos do Pet (até 3) ---
-                    Text(
-                      'FOTOS DO PET (1 A 3 FOTOS) *',
-                      style: AppTextStyles.sectionHeader(),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: _buildMultiImagePicker(isLoading),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // --- Seção 4: Localização Exata no Mapa ---
-                    Text(
-                      'LOCALIZAÇÃO NO MAPA (OPCIONAL)',
-                      style: AppTextStyles.sectionHeader(),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          OutlinedButton.icon(
-                            style: AppButtonStyles.outlined(),
-                            icon: const Icon(Icons.my_location, size: 18),
-                            label: const Text('Usar minha localização atual'),
-                            onPressed: isLoading || _isSyncingLocation
-                                ? null
-                                : _useCurrentLocation,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            _isSyncingLocation
-                                ? 'Sincronizando endereço e coordenadas...'
-                                : _selectedLocation == null
-                                ? 'Toque no mapa ou informe o CEP/endereço acima para fixar o pino.'
-                                : 'Coordenadas: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
-                            style: AppTextStyles.bodySmall(
-                              color: _selectedLocation == null
-                                  ? AppColors.textSecondary
-                                  : AppColors.primary,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: SizedBox(
-                              height: 260,
-                              child: FlutterMap(
-                                mapController: _mapController,
-                                options: MapOptions(
-                                  initialCenter:
-                                      _selectedLocation ??
-                                      const LatLng(-23.5505, -46.6333),
-                                  initialZoom: 15.0,
-                                  onTap: (tapPosition, point) {
-                                    if (!isLoading && !_isSyncingLocation) {
-                                      _syncAddressFromCoordinates(point);
-                                    }
-                                  },
-                                ),
-                                children: [
-                                  TileLayer(
-                                    urlTemplate:
-                                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                    userAgentPackageName: 'com.example.app',
-                                  ),
-                                  if (_selectedLocation != null)
-                                    MarkerLayer(
-                                      markers: [
-                                        Marker(
-                                          point: _selectedLocation!,
-                                          width: 40,
-                                          height: 40,
-                                          child: const Icon(
-                                            Icons.location_on,
-                                            color: AppColors.success,
-                                            size: 40,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-
-                    if (isLoading)
-                      const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.primary,
-                        ),
-                      )
-                    else ...[
-                      ElevatedButton(
-                        style: AppButtonStyles.primary(),
-                        onPressed: _submitForm,
-                        child: Text(
-                          widget.alertId != null
-                              ? 'Salvar Alterações'
-                              : 'Cadastrar Pet Encontrado',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        style: AppButtonStyles.outlined(),
-                        onPressed: () => context.pop(),
-                        child: const Text('Cancelar'),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                  ],
+      body: isLoading && !_controllersInitialized && isEditing
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 4, 28, 8),
+                  child: _StepIndicator(current: _step, titles: _stepTitles),
                 ),
+                Expanded(
+                  child: Form(
+                    key: _formKey,
+                    child: IndexedStack(
+                      index: _step,
+                      children: [
+                        _buildPetStep(isLoading),
+                        _buildLocationStep(isLoading),
+                        _buildFinishStep(isLoading),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          child: isLoading
+              ? const SizedBox(
+                  height: 52,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : ElevatedButton(
+                  onPressed: isLastStep
+                      ? _submitForm
+                      : () => setState(() => _step++),
+                  child: Text(
+                    isLastStep
+                        ? (isEditing
+                              ? 'Salvar alterações'
+                              : 'Publicar registro')
+                        : 'Próximo',
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _stepBody(List<Widget> children) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildPetStep(bool isLoading) {
+    return _stepBody([
+      _buildMultiImagePicker(isLoading),
+      const SizedBox(height: 22),
+      const FieldLabel('Espécie *'),
+      Row(
+        children: [
+          for (final type in PetType.values) ...[
+            Expanded(
+              child: _SpeciesOption(
+                label: switch (type) {
+                  PetType.dog => 'Cachorro',
+                  PetType.cat => 'Gato',
+                  PetType.other => 'Outro',
+                },
+                selected: _selectedType == type,
+                onTap: isLoading
+                    ? null
+                    : () => setState(() => _selectedType = type),
               ),
             ),
-    );
+            if (type != PetType.values.last) const SizedBox(width: 10),
+          ],
+        ],
+      ),
+      const SizedBox(height: 18),
+      const FieldLabel('Raça aparente (opcional)'),
+      TextFormField(
+        controller: _breedController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Ex.: SRD, Golden, Persa',
+        ),
+        enabled: !isLoading,
+      ),
+      const SizedBox(height: 18),
+      const FieldLabel('Idade aparente (opcional)'),
+      TextFormField(
+        controller: _apparentAgeController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Ex.: Filhote, adulto, idoso',
+        ),
+        enabled: !isLoading,
+      ),
+    ]);
+  }
+
+  Widget _buildLocationStep(bool isLoading) {
+    return _stepBody([
+      const FieldLabel('CEP (opcional)'),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _cepController,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: '00000-000',
+                helperText: 'Preenche endereço e centraliza o mapa',
+                prefixIcon: const Icon(
+                  Icons.markunread_mailbox_outlined,
+                  size: 20,
+                ),
+              ),
+              keyboardType: TextInputType.number,
+              inputFormatters: [CepInputFormatter()],
+              onChanged: (val) {
+                if (AppSanitizers.digitsOnly(val).length == 8) {
+                  _lookupCepAndSyncMap(val);
+                }
+              },
+              enabled: !isLoading,
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 52,
+            child: OutlinedButton(
+              style: AppButtonStyles.outlined(),
+              onPressed: isLoading || _isSyncingLocation
+                  ? null
+                  : () => _lookupCepAndSyncMap(),
+              child: _isSyncingLocation
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.search_rounded),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 16),
+      const FieldLabel('Rua / Logradouro (opcional)'),
+      TextFormField(
+        controller: _streetController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Ex.: Rua das Flores',
+          prefixIcon: const Icon(Icons.signpost_outlined, size: 20),
+        ),
+        enabled: !isLoading,
+      ),
+      const SizedBox(height: 16),
+      const FieldLabel('Bairro (opcional)'),
+      TextFormField(
+        controller: _districtController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Ex.: Centro',
+          prefixIcon: const Icon(Icons.holiday_village_outlined, size: 20),
+        ),
+        enabled: !isLoading,
+      ),
+      const SizedBox(height: 16),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const FieldLabel('Cidade *'),
+                TextFormField(
+                  controller: _cityController,
+                  decoration: AppInputDecoration.defaultDecoration(
+                    labelText: '',
+                    hintText: 'Ex.: São Paulo',
+                  ),
+                  enabled: !isLoading,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const FieldLabel('UF *'),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedState,
+                  decoration: AppInputDecoration.defaultDecoration(
+                    labelText: '',
+                  ),
+                  items: _brazilStates
+                      .map((uf) => DropdownMenuItem(value: uf, child: Text(uf)))
+                      .toList(),
+                  onChanged: isLoading
+                      ? null
+                      : (val) => setState(() => _selectedState = val),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 16),
+      const FieldLabel('Ponto de referência (opcional)'),
+      TextFormField(
+        controller: _referenceController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Ex.: Próximo à praça central ou mercado',
+          prefixIcon: const Icon(Icons.place_outlined, size: 20),
+        ),
+        enabled: !isLoading,
+      ),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: isLoading || _isSyncingLocation
+              ? null
+              : _syncMapFromAddressFields,
+          icon: const Icon(Icons.pin_drop_outlined, size: 18),
+          label: const Text('Localizar endereço no mapa'),
+        ),
+      ),
+      const SizedBox(height: 6),
+      const FieldLabel('Data em que foi encontrado *'),
+      InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: isLoading ? null : () => _selectDate(context),
+        child: InputDecorator(
+          decoration: AppInputDecoration.defaultDecoration(
+            labelText: '',
+            prefixIcon: const Icon(Icons.calendar_month_outlined, size: 20),
+            suffixIcon: const Icon(Icons.expand_more_rounded),
+          ),
+          child: Text(_formatDate(_selectedDate), style: AppTextStyles.body()),
+        ),
+      ),
+      const SizedBox(height: 20),
+      Row(
+        children: [
+          Expanded(child: Text('Marque no mapa', style: AppTextStyles.label())),
+          TextButton.icon(
+            icon: const Icon(Icons.my_location_rounded, size: 18),
+            label: const Text('Usar minha localização'),
+            onPressed: isLoading || _isSyncingLocation
+                ? null
+                : _useCurrentLocation,
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: SizedBox(
+          height: 260,
+          child: FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter:
+                  _selectedLocation ?? const LatLng(-23.5505, -46.6333),
+              initialZoom: 15.0,
+              onTap: (tapPosition, point) {
+                if (!isLoading && !_isSyncingLocation) {
+                  _syncAddressFromCoordinates(point);
+                }
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.app',
+              ),
+              if (_selectedLocation != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _selectedLocation!,
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.topCenter,
+                      child: const Icon(
+                        Icons.location_on_rounded,
+                        color: AppColors.success,
+                        size: 44,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      Row(
+        children: [
+          Icon(
+            _selectedLocation == null
+                ? Icons.touch_app_outlined
+                : Icons.check_circle_rounded,
+            size: 18,
+            color: _selectedLocation == null
+                ? AppColors.textSecondary
+                : AppColors.success,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              _isSyncingLocation
+                  ? 'Sincronizando endereço e coordenadas...'
+                  : _selectedLocation == null
+                  ? 'Toque no mapa ou informe o CEP/endereço acima para fixar o pino.'
+                  : 'Local marcado: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
+              style: AppTextStyles.bodySmall(),
+            ),
+          ),
+        ],
+      ),
+    ]);
+  }
+
+  Widget _buildFinishStep(bool isLoading) {
+    final firstPhoto = _photos.isNotEmpty ? _photos.first : null;
+    final speciesLabel = switch (_selectedType) {
+      PetType.dog => 'Cachorro',
+      PetType.cat => 'Gato',
+      PetType.other => 'Outro',
+    };
+
+    return _stepBody([
+      const FieldLabel('Descrição / Características (opcional)'),
+      TextFormField(
+        controller: _descriptionController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Cor, coleira, comportamento, estado do animal…',
+          helperText: 'Características que ajudem o tutor a reconhecer o pet.',
+        ),
+        maxLines: 4,
+        maxLength: 255,
+        enabled: !isLoading,
+      ),
+      const SizedBox(height: 10),
+      const FieldLabel('Telefone de contato (opcional)'),
+      TextFormField(
+        controller: _contactController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: '(11) 99999-9999',
+          helperText: 'Preencha apenas se acolheu o pet ou puder atender',
+          prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+        ),
+        keyboardType: TextInputType.phone,
+        inputFormatters: [PhoneInputFormatter()],
+        enabled: !isLoading,
+      ),
+      const SizedBox(height: 10),
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.privacy_tip_outlined,
+              size: 16,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Proteção de Dados (LGPD): O telefone é opcional. Caso opte por informá-lo, ele será exibido no anúncio exclusivamente para que o tutor do pet entre em contato.',
+                style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+      Text('Revise antes de publicar', style: AppTextStyles.sectionHeader()),
+      const SizedBox(height: 10),
+      _ReviewCard(
+        imageBytes: firstPhoto?.bytes,
+        imageUrl: firstPhoto?.existingUrl,
+        photoCount: _photos.length,
+        name: _breedController.text.trim().isNotEmpty
+            ? _breedController.text.trim()
+            : '$speciesLabel encontrado',
+        subtitle: '$speciesLabel • ${_photos.length} foto(s)',
+        location: _composeReadableLocation(),
+        date: _formatDate(_selectedDate),
+        hasPin: _selectedLocation != null,
+        onEditStep: (step) => setState(() => _step = step),
+      ),
+    ]);
   }
 
   Widget _buildMultiImagePicker(bool isLoading) {
     final canAddMore = _photos.length < _maxPhotos;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Adicione até $_maxPhotos fotos nítidas do pet encontrado (diferentes ângulos ajudam a IA a localizar o tutor).',
-          style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _maxPhotos,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            childAspectRatio: 0.9,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Fotos do pet (1 a $_maxPhotos fotos) *',
+            style: AppTextStyles.label(),
           ),
-          itemBuilder: (context, index) {
-            if (index < _photos.length) {
-              final item = _photos[index];
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: index == 0
-                            ? AppColors.primary
-                            : AppColors.border,
-                        width: index == 0 ? 2 : 1,
+          const SizedBox(height: 4),
+          Text(
+            'Diferentes ângulos aumentam a precisão da IA para localizar o tutor.',
+            style: AppTextStyles.bodySmall(),
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _maxPhotos,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.9,
+            ),
+            itemBuilder: (context, index) {
+              if (index < _photos.length) {
+                final item = _photos[index];
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: index == 0
+                              ? AppColors.primary
+                              : AppColors.border,
+                          width: index == 0 ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      borderRadius: BorderRadius.circular(12),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: item.bytes != null
+                            ? Image.memory(item.bytes!, fit: BoxFit.cover)
+                            : PetImage(url: item.existingUrl),
+                      ),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: item.bytes != null
-                          ? Image.memory(item.bytes!, fit: BoxFit.cover)
-                          : Image.network(
-                              item.existingUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Center(
-                                    child: Icon(
-                                      Icons.broken_image,
-                                      size: 28,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
+                    if (index == 0)
+                      Positioned(
+                        bottom: 4,
+                        left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'Principal',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
                             ),
-                    ),
-                  ),
-                  if (index == 0)
+                          ),
+                        ),
+                      ),
                     Positioned(
-                      bottom: 4,
-                      left: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'Principal',
-                          style: TextStyle(
+                      top: 4,
+                      right: 4,
+                      child: InkWell(
+                        onTap: isLoading
+                            ? null
+                            : () {
+                                setState(() {
+                                  _photos.removeAt(index);
+                                });
+                              },
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            size: 14,
                             color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
                     ),
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: InkWell(
-                      onTap: isLoading
-                          ? null
-                          : () {
-                              setState(() {
-                                _photos.removeAt(index);
-                              });
-                            },
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          size: 14,
-                          color: Colors.white,
+                  ],
+                );
+              }
+
+              return InkWell(
+                onTap: isLoading ? null : () => _pickImage(ImageSource.gallery),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft.withAlpha(90),
+                    border: Border.all(color: AppColors.primary.withAlpha(90)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.add_a_photo_outlined,
+                        size: 24,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Foto ${index + 1}',
+                        style: AppTextStyles.bodySmall(
+                          color: AppColors.primary,
                         ),
                       ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                  label: const Text('Câmera'),
+                  onPressed: isLoading || !canAddMore
+                      ? null
+                      : () => _pickImage(ImageSource.camera),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  label: Text('Galeria (${_photos.length}/$_maxPhotos)'),
+                  onPressed: isLoading || !canAddMore
+                      ? null
+                      : () => _pickImage(ImageSource.gallery),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepIndicator extends StatelessWidget {
+  final int current;
+  final List<String> titles;
+
+  const _StepIndicator({required this.current, required this.titles});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < titles.length; i++) ...[
+          SizedBox(
+            width: 78,
+            child: Column(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: i <= current
+                        ? AppColors.primary
+                        : AppColors.surfaceLight,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: i <= current
+                          ? AppColors.primary
+                          : AppColors.border,
+                      width: 1.5,
                     ),
                   ),
-                ],
-              );
-            }
-
-            return InkWell(
-              onTap: isLoading ? null : () => _pickImage(ImageSource.gallery),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.scaffoldLight,
-                  border: Border.all(color: AppColors.border),
-                  borderRadius: BorderRadius.circular(12),
+                  alignment: Alignment.center,
+                  child: i < current
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        )
+                      : Text(
+                          '${i + 1}',
+                          style: AppTextStyles.label(
+                            color: i == current
+                                ? Colors.white
+                                : AppColors.textSecondary,
+                          ),
+                        ),
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  titles[i],
+                  style:
+                      AppTextStyles.bodySmall(
+                        color: i == current
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                      ).copyWith(
+                        fontWeight: i == current
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          if (i < titles.length - 1)
+            Expanded(
+              child: Container(
+                height: 2,
+                margin: const EdgeInsets.only(top: 14),
+                color: i < current ? AppColors.primary : AppColors.border,
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _SpeciesOption extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _SpeciesOption({
+    required this.label,
+    required this.selected,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.primary : AppColors.surfaceLight,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected ? AppColors.primary : AppColors.border,
+        ),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: Text(
+              label,
+              style: AppTextStyles.label(
+                color: selected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewCard extends StatelessWidget {
+  final Uint8List? imageBytes;
+  final String? imageUrl;
+  final int photoCount;
+  final String name;
+  final String subtitle;
+  final String location;
+  final String date;
+  final bool hasPin;
+  final ValueChanged<int> onEditStep;
+
+  const _ReviewCard({
+    required this.imageBytes,
+    required this.imageUrl,
+    required this.photoCount,
+    required this.name,
+    required this.subtitle,
+    required this.location,
+    required this.date,
+    required this.hasPin,
+    required this.onEditStep,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox.square(
+                  dimension: 64,
+                  child: imageBytes != null
+                      ? Image.memory(imageBytes!, fit: BoxFit.cover)
+                      : PetImage(url: imageUrl),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(
-                      Icons.add_a_photo_outlined,
-                      size: 26,
-                      color: AppColors.textSecondary,
-                    ),
-                    const SizedBox(height: 4),
+                    Text(name, style: AppTextStyles.heading3()),
+                    Text(subtitle, style: AppTextStyles.bodySmall()),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: () => onEditStep(0),
+                child: const Text('Editar'),
+              ),
+            ],
+          ),
+          const Divider(height: 22),
+          Row(
+            children: [
+              const Icon(
+                Icons.place_outlined,
+                size: 18,
+                color: AppColors.success,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(location, style: AppTextStyles.body()),
                     Text(
-                      'Foto ${index + 1}',
+                      '$date • ${hasPin ? 'local marcado no mapa' : 'sem pino no mapa'}',
                       style: AppTextStyles.bodySmall(
-                        color: AppColors.textSecondary,
+                        color: hasPin
+                            ? AppColors.textSecondary
+                            : AppColors.error,
                       ),
                     ),
                   ],
                 ),
               ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                style: AppButtonStyles.outlined(),
-                icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                label: const Text('Câmera'),
-                onPressed: isLoading || !canAddMore
-                    ? null
-                    : () => _pickImage(ImageSource.camera),
+              TextButton(
+                onPressed: () => onEditStep(1),
+                child: const Text('Editar'),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                style: AppButtonStyles.outlined(),
-                icon: const Icon(Icons.photo_library_outlined, size: 18),
-                label: Text('Galeria (${_photos.length}/$_maxPhotos)'),
-                onPressed: isLoading || !canAddMore
-                    ? null
-                    : () => _pickImage(ImageSource.gallery),
-              ),
-            ),
-          ],
-        ),
-      ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

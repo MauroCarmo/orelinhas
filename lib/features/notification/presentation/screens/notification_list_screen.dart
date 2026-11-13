@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../pet_lost/presentation/widgets/pet_widgets.dart';
 import '../../domain/models/notification_entity.dart';
 import '../../domain/models/notification_type.dart';
 import '../controllers/notification_controller.dart';
 
-/// Tela de listagem de notificações com suporte a redirecionamento automático para anúncios de pets encontrados.
 class NotificationListScreen extends ConsumerWidget {
   const NotificationListScreen({super.key});
 
@@ -130,99 +130,61 @@ class NotificationListScreen extends ConsumerWidget {
     final unreadCount = ref.watch(unreadNotificationCountProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
-        title: Text(
-          'Notificações',
-          style: AppTextStyles.heading2(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: 'Voltar',
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go(AppRoutes.home),
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        title: const Text('Notificações'),
         actions: [
           if (unreadCount > 0)
             TextButton.icon(
-              icon: const Icon(Icons.done_all, size: 18, color: Colors.white),
-              label: const Text(
-                'Marcar lidas',
-                style: TextStyle(color: Colors.white),
-              ),
+              icon: const Icon(Icons.done_all_rounded, size: 18),
+              label: const Text('Marcar lidas'),
               onPressed: () {
                 ref
                     .read(notificationControllerProvider.notifier)
                     .markAllAsRead();
               },
             ),
+          const SizedBox(width: 4),
         ],
       ),
       body: notificationsAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-        error: (err, _) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: AppColors.error),
-              const SizedBox(height: 12),
-              const Text('Erro ao carregar notificações.'),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: () => ref
-                    .read(notificationControllerProvider.notifier)
-                    .refreshNotifications(),
-                child: const Text('Tentar novamente'),
-              ),
-            ],
-          ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, _) => EmptyState(
+          icon: Icons.wifi_off_rounded,
+          color: AppColors.error,
+          title: 'Erro ao carregar notificações.',
+          message: 'Verifique sua conexão e tente novamente.',
+          actionLabel: 'Tentar novamente',
+          onAction: () => ref
+              .read(notificationControllerProvider.notifier)
+              .refreshNotifications(),
         ),
         data: (notifications) {
           if (notifications.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.notifications_none,
-                      size: 64,
-                      color: Colors.grey.shade400,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Você não possui notificações.',
-                      style: AppTextStyles.heading3(
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Quando houver novidades sobre seus pets, elas aparecerão aqui.',
-                      style: AppTextStyles.bodySmall(
-                        color: AppColors.textSecondary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
+            return const EmptyState(
+              icon: Icons.notifications_none_rounded,
+              title: 'Nenhuma notificação por aqui',
+              message:
+                  'Quando houver correspondências de IA ou novidades sobre seus pets, elas aparecerão aqui.',
             );
           }
 
           return RefreshIndicator(
-            color: AppColors.primary,
             onRefresh: () => ref
                 .read(notificationControllerProvider.notifier)
                 .refreshNotifications(),
             child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
               itemCount: notifications.length,
-              separatorBuilder: (context, index) =>
-                  const Divider(height: 1, color: AppColors.border),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final notif = notifications[index];
-                return _buildNotificationTile(context, ref, notif);
+                return _buildNotificationCard(context, ref, notif);
               },
             ),
           );
@@ -231,152 +193,154 @@ class NotificationListScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildNotificationTile(
+  Widget _buildNotificationCard(
     BuildContext context,
     WidgetRef ref,
     NotificationEntity notification,
   ) {
+    final isMatch = notification.type == NotificationType.matchFound;
+
     IconData iconData;
     Color iconColor;
     Color iconBg;
 
     switch (notification.type) {
       case NotificationType.matchFound:
-        iconData = Icons.auto_awesome;
-        iconColor = Colors.purple.shade700;
-        iconBg = Colors.purple.shade50;
+        iconData = Icons.auto_awesome_rounded;
+        iconColor = AppColors.primary;
+        iconBg = AppColors.primarySoft;
         break;
       case NotificationType.petStatusUpdate:
-        iconData = Icons.pets;
-        iconColor = AppColors.primary;
-        iconBg = Colors.blue.shade50;
+        iconData = Icons.pets_rounded;
+        iconColor = AppColors.success;
+        iconBg = AppColors.success.withAlpha(28);
         break;
       case NotificationType.system:
-        iconData = Icons.info_outline;
-        iconColor = Colors.blueGrey.shade700;
-        iconBg = Colors.blueGrey.shade50;
+        iconData = Icons.info_outline_rounded;
+        iconColor = AppColors.textSecondary;
+        iconBg = AppColors.scaffoldLight;
         break;
     }
 
-    final percentageLabel = notification.type == NotificationType.matchFound
+    final percentageLabel = isMatch
         ? _extractPercentageLabel(notification)
         : null;
 
-    return InkWell(
-      onTap: () => _handleNotificationTap(context, ref, notification),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        color: notification.isRead
-            ? Colors.transparent
-            : Colors.blue.shade50.withValues(alpha: 0.35),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-              child: Icon(iconData, size: 22, color: iconColor),
+    return Material(
+      color: AppColors.surfaceLight,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _handleNotificationTap(context, ref, notification),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: notification.isRead
+                  ? Colors.transparent
+                  : AppColors.primary.withAlpha(90),
+              width: 1.2,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          _cleanNotificationTitle(notification),
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: notification.isRead
-                                ? FontWeight.w600
-                                : FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (percentageLabel != null) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.purple.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(iconData, size: 22, color: iconColor),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
                           child: Text(
-                            percentageLabel,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.purple.shade800,
+                            _cleanNotificationTitle(notification),
+                            style: AppTextStyles.heading3(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (percentageLabel != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primarySoft,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              percentageLabel,
+                              style: AppTextStyles.label(
+                                color: AppColors.primary,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
-                      const SizedBox(width: 8),
-                      Text(
-                        _formatTimestamp(notification.createdAt),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _cleanNotificationBody(notification),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: notification.isRead
-                          ? Colors.grey.shade700
-                          : AppColors.textPrimary,
                     ),
-                  ),
-                  if (notification.type == NotificationType.matchFound) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
+                    Text(
+                      _cleanNotificationBody(notification),
+                      style: AppTextStyles.body(
+                        color: notification.isRead
+                            ? AppColors.textSecondary
+                            : AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Text(
-                          'Clique para visualizar correspondência',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.purple.shade700,
+                          _formatTimestamp(notification.createdAt),
+                          style: AppTextStyles.bodySmall(),
+                        ),
+                        if (isMatch) ...[
+                          const Spacer(),
+                          Text(
+                            'Ver correspondência',
+                            style: AppTextStyles.label(
+                              color: AppColors.primary,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.arrow_forward_ios,
-                          size: 10,
-                          color: Colors.purple.shade700,
-                        ),
+                          const SizedBox(width: 2),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 16,
+                            color: AppColors.primary,
+                          ),
+                        ],
                       ],
                     ),
                   ],
-                ],
-              ),
-            ),
-            if (!notification.isRead) ...[
-              const SizedBox(width: 8),
-              Container(
-                margin: const EdgeInsets.only(top: 4),
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
                 ),
               ),
+              if (!notification.isRead) ...[
+                const SizedBox(width: 8),
+                Container(
+                  margin: const EdgeInsets.only(top: 6),
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

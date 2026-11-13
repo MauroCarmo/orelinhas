@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../domain/models/pet_match_candidate_entity.dart';
 
-/// Badge visual elegante para indicar o score e o nível de similaridade de uma correspondência.
+/// Badge visual para indicar o score e o nível de similaridade de uma correspondência.
 class SimilarityBadge extends StatelessWidget {
   final double score;
   final MatchMethod method;
@@ -12,45 +13,31 @@ class SimilarityBadge extends StatelessWidget {
     this.method = MatchMethod.visual,
   });
 
-  Color _getColor(BuildContext context) {
-    if (score >= 0.92) {
-      return Colors.green.shade700;
-    } else if (score >= 0.88) {
-      return Colors.orange.shade800;
-    } else {
-      return Colors.blueGrey.shade700;
-    }
-  }
-
-  Color _getBackgroundColor(BuildContext context) {
-    if (score >= 0.92) {
-      return Colors.green.shade50;
-    } else if (score >= 0.88) {
-      return Colors.orange.shade50;
-    } else {
-      return Colors.blueGrey.shade50;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final color = _getColor(context);
-    final bgColor = _getBackgroundColor(context);
+    final (Color color, Color bgColor) = score >= 0.92
+        ? (AppColors.success, AppColors.successSoft)
+        : score >= 0.88
+        ? (AppColors.primary, AppColors.primarySoft)
+        : (AppColors.textSecondary, AppColors.surfaceLight);
+
     final percentage = (score * 100).toStringAsFixed(1);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            method == MatchMethod.visual ? Icons.auto_awesome : Icons.tune,
-            size: 14,
+            method == MatchMethod.visual
+                ? Icons.auto_awesome_rounded
+                : Icons.tune_rounded,
+            size: 13,
             color: color,
           ),
           const SizedBox(width: 4),
@@ -58,8 +45,8 @@ class SimilarityBadge extends StatelessWidget {
             '$percentage% similaridade',
             style: TextStyle(
               color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
             ),
           ),
         ],
