@@ -285,11 +285,13 @@ class AppTheme {
         backgroundColor: AppColors.surfaceLight,
         surfaceTintColor: Colors.transparent,
       ),
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 3,
-        shape: CircleBorder(),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(100),
+        ),
       ),
     );
   }

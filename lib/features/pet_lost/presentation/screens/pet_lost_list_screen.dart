@@ -374,8 +374,12 @@ class _PetLostListScreenState extends ConsumerState<PetLostListScreen> {
         onPressed: () => context.push(AppRoutes.petLostCreate),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: Text('Novo Alerta', style: AppTextStyles.button()),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+        icon: const Icon(Icons.add_rounded),
+        label: Text(
+          'Novo Alerta',
+          style: AppTextStyles.button(color: Colors.white),
+        ),
       ),
     );
   }

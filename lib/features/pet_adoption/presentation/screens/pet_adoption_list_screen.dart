@@ -358,8 +358,12 @@ class _PetAdoptionListScreenState extends ConsumerState<PetAdoptionListScreen> {
         onPressed: () => context.push(AppRoutes.petAdoptionCreate),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: Text('Anunciar Adoção', style: AppTextStyles.button()),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+        icon: const Icon(Icons.add_rounded),
+        label: Text(
+          'Anunciar Adoção',
+          style: AppTextStyles.button(color: Colors.white),
+        ),
       ),
     );
   }
