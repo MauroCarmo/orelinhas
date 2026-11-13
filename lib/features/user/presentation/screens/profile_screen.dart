@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
 import '../../../../core/validation/validators.dart';
@@ -13,6 +14,7 @@ import '../../../../core/services/storage_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../../core/theme/widgets/app_input_decoration.dart';
+import '../../../../core/routing/app_routes.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../../domain/profile_entity.dart';
@@ -110,7 +112,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ? e.message
             : 'Falha ao buscar o CEP.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
     } finally {
@@ -171,7 +176,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
-        if (!mounted) return;
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageFileName = image.name;
@@ -179,11 +183,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         });
       }
     } catch (e) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Erro ao selecionar imagem.'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         ),
       );
     }
@@ -214,17 +217,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
       return url;
     } on ValidationException catch (e) {
-      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
       );
       return null;
     } catch (e) {
-      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Falha ao enviar imagem.'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         ),
       );
       return null;
@@ -235,7 +236,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_formKey.currentState!.validate()) {
       // Upload do avatar antes de salvar
       final avatarUrl = await _uploadAvatarIfNeeded();
-      if (!mounted) return;
       if (_selectedImageBytes != null && avatarUrl == null) {
         // Falha no upload, não prossegue
         return;
@@ -277,7 +277,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final validationError = updatedProfile.validate();
       if (validationError != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(validationError), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(validationError),
+            backgroundColor: AppColors.error,
+          ),
         );
         return;
       }
@@ -303,7 +306,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Excluir', style: TextStyle(color: Colors.white)),
           ),
@@ -331,7 +334,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ? error.message
               : 'Ocorreu um erro inesperado.';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: AppColors.error,
+            ),
           );
         },
         data: (profile) {
@@ -339,7 +345,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Perfil atualizado com sucesso!'),
-                backgroundColor: Colors.green,
+                backgroundColor: AppColors.success,
               ),
             );
           }
@@ -349,15 +355,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Minha Conta'),
+        title: const Text('Perfil'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded),
             onPressed: () {
               ref.read(authControllerProvider.notifier).signOut();
             },
-            tooltip: 'Sair da Conta',
+            tooltip: 'Sair da conta',
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: profileState.when(
@@ -370,317 +377,406 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
           _initializeControllers(profile);
 
+          final hasAvatar =
+              _selectedImageBytes != null ||
+              (_existingAvatarUrl != null && _existingAvatarUrl!.isNotEmpty);
+
           return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 90),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
             child: Form(
               key: _formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Avatar com upload
-                  Center(
-                    child: GestureDetector(
-                      onTap: _pickImage,
-                      child: CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Colors.blueGrey[100],
-                        backgroundImage: _selectedImageBytes != null
-                            ? MemoryImage(_selectedImageBytes!)
-                            : (_existingAvatarUrl != null &&
-                                      _existingAvatarUrl!.isNotEmpty
-                                  ? NetworkImage(_existingAvatarUrl!)
-                                  : null),
-                        child:
-                            (_selectedImageBytes == null &&
-                                (_existingAvatarUrl == null ||
-                                    _existingAvatarUrl!.isEmpty))
-                            ? const Icon(
-                                Icons.camera_alt,
-                                size: 40,
-                                color: Colors.white,
-                              )
-                            : null,
-                      ),
+                  // Cabeçalho com avatar
+                  _SectionCard(
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: _pickImage,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              CircleAvatar(
+                                radius: 34,
+                                backgroundColor: AppColors.primarySoft,
+                                backgroundImage: _selectedImageBytes != null
+                                    ? MemoryImage(_selectedImageBytes!)
+                                    : (hasAvatar
+                                              ? NetworkImage(
+                                                  _existingAvatarUrl!,
+                                                )
+                                              : null)
+                                          as ImageProvider?,
+                                child: hasAvatar
+                                    ? null
+                                    : const Icon(
+                                        Icons.person_rounded,
+                                        size: 36,
+                                        color: AppColors.primary,
+                                      ),
+                              ),
+                              Positioned(
+                                right: -2,
+                                bottom: -2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.photo_camera_outlined,
+                                    size: 13,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                profile.name.isEmpty
+                                    ? 'Seu nome'
+                                    : profile.name,
+                                style: AppTextStyles.heading2(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                profile.email,
+                                style: AppTextStyles.bodySmall(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              GestureDetector(
+                                onTap: _pickImage,
+                                child: Text(
+                                  'Alterar foto',
+                                  style: AppTextStyles.label(
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: TextButton(
-                      onPressed: _pickImage,
-                      child: const Text('Alterar foto'),
+                  const SizedBox(height: 14),
+
+                  // Atalhos
+                  _SectionCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        _MenuTile(
+                          icon: Icons.article_outlined,
+                          title: 'Meus alertas',
+                          onTap: () => context.go(AppRoutes.myAlerts),
+                        ),
+                        const Divider(height: 1, indent: 56),
+                        _MenuTile(
+                          icon: Icons.campaign_outlined,
+                          title: 'Registrar pet perdido',
+                          onTap: () => context.push(AppRoutes.petLostCreate),
+                        ),
+                        const Divider(height: 1, indent: 56),
+                        _MenuTile(
+                          icon: Icons.logout_rounded,
+                          title: 'Sair da conta',
+                          onTap: () => ref
+                              .read(authControllerProvider.notifier)
+                              .signOut(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+
+                  Text('Dados pessoais', style: AppTextStyles.sectionHeader()),
+                  const SizedBox(height: 12),
+                  _SectionCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Campo Email (Apenas Leitura)
+                        const FieldLabel('E-mail'),
+                        TextFormField(
+                          initialValue: profile.email,
+                          decoration: AppInputDecoration.defaultDecoration(
+                            labelText: '',
+                            helperText: 'O e-mail não pode ser alterado.',
+                            prefixIcon: const Icon(
+                              Icons.mail_outline_rounded,
+                              size: 20,
+                            ),
+                          ),
+                          readOnly: true,
+                          enabled: false,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Campo Nome
+                        const FieldLabel('Nome completo'),
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: AppInputDecoration.defaultDecoration(
+                            labelText: '',
+                            prefixIcon: const Icon(
+                              Icons.person_outline_rounded,
+                              size: 20,
+                            ),
+                          ),
+                          validator: AppValidators.combine([
+                            AppValidators.required('Nome Completo'),
+                            AppValidators.maxLength(100, 'Nome Completo'),
+                          ]),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Campo Telefone
+                        const FieldLabel('Telefone (com DDD)'),
+                        TextFormField(
+                          controller: _phoneController,
+                          decoration: AppInputDecoration.defaultDecoration(
+                            labelText: '',
+                            hintText: '(11) 99999-9999',
+                            prefixIcon: const Icon(
+                              Icons.phone_outlined,
+                              size: 20,
+                            ),
+                          ),
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [PhoneInputFormatter()],
+                          validator: AppValidators.combine([
+                            AppValidators.required('Telefone'),
+                            AppValidators.phone(),
+                          ]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+
+                  // Campos de Endereço Estruturado
+                  Text('Endereço', style: AppTextStyles.sectionHeader()),
+                  const SizedBox(height: 12),
+                  _SectionCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Linha CEP e Estado (UF)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const FieldLabel('CEP'),
+                                  TextFormField(
+                                    controller: _cepController,
+                                    decoration:
+                                        AppInputDecoration.defaultDecoration(
+                                          labelText: '',
+                                          hintText: '01001-000',
+                                          suffixIcon: _isLoadingCep
+                                              ? const Padding(
+                                                  padding: EdgeInsets.all(14.0),
+                                                  child: SizedBox(
+                                                    width: 16,
+                                                    height: 16,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  ),
+                                                )
+                                              : null,
+                                        ),
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [CepInputFormatter()],
+                                    validator: AppValidators.combine([
+                                      AppValidators.required('CEP'),
+                                      AppValidators.cep(),
+                                    ]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const FieldLabel('UF'),
+                                  TextFormField(
+                                    controller: _stateController,
+                                    decoration:
+                                        AppInputDecoration.defaultDecoration(
+                                          labelText: '',
+                                          hintText: 'SP',
+                                        ),
+                                    textCapitalization:
+                                        TextCapitalization.characters,
+                                    validator: AppValidators.combine([
+                                      AppValidators.required('Estado (UF)'),
+                                      AppValidators.minLength(2, 'Estado (UF)'),
+                                      AppValidators.maxLength(2, 'Estado (UF)'),
+                                    ]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Campo Cidade
+                        const FieldLabel('Cidade'),
+                        TextFormField(
+                          controller: _cityController,
+                          decoration: AppInputDecoration.defaultDecoration(
+                            labelText: '',
+                          ),
+                          validator: AppValidators.combine([
+                            AppValidators.required('Cidade'),
+                            AppValidators.maxLength(100, 'Cidade'),
+                          ]),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Campo Bairro
+                        const FieldLabel('Bairro'),
+                        TextFormField(
+                          controller: _districtController,
+                          decoration: AppInputDecoration.defaultDecoration(
+                            labelText: '',
+                          ),
+                          validator: AppValidators.combine([
+                            AppValidators.required('Bairro'),
+                            AppValidators.maxLength(100, 'Bairro'),
+                          ]),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Linha Rua e Número
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const FieldLabel('Rua'),
+                                  TextFormField(
+                                    controller: _streetController,
+                                    decoration:
+                                        AppInputDecoration.defaultDecoration(
+                                          labelText: '',
+                                        ),
+                                    validator: AppValidators.combine([
+                                      AppValidators.required(
+                                        'Rua / Logradouro',
+                                      ),
+                                      AppValidators.maxLength(
+                                        150,
+                                        'Rua / Logradouro',
+                                      ),
+                                    ]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 1,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const FieldLabel('Nº'),
+                                  TextFormField(
+                                    controller: _numberController,
+                                    decoration:
+                                        AppInputDecoration.defaultDecoration(
+                                          labelText: '',
+                                        ),
+                                    validator: AppValidators.combine([
+                                      AppValidators.required('Número'),
+                                      AppValidators.maxLength(20, 'Número'),
+                                    ]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Campo Complemento
+                        const FieldLabel('Complemento (opcional)'),
+                        TextFormField(
+                          controller: _complementController,
+                          decoration: AppInputDecoration.defaultDecoration(
+                            labelText: '',
+                            hintText: 'Ex.: Bloco B, Apto 104',
+                          ),
+                          validator: AppValidators.combine([
+                            AppValidators.maxLength(150, 'Complemento'),
+                          ]),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
-
-                  Text(
-                    'INFORMAÇÕES PESSOAIS',
-                    style: AppTextStyles.sectionHeader(),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Campo Email (Apenas Leitura)
-                  TextFormField(
-                    initialValue: profile.email,
-                    decoration:
-                        AppInputDecoration.defaultDecoration(
-                          labelText: 'E-mail (Não pode ser alterado)',
-                          prefixIcon: const Icon(Icons.email, size: 20),
-                        ).copyWith(
-                          floatingLabelBehavior: FloatingLabelBehavior.never,
-                        ),
-                    readOnly: true,
-                    enabled: false,
-                    style: const TextStyle(color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Campo Nome
-                  TextFormField(
-                    controller: _nameController,
-                    decoration:
-                        AppInputDecoration.defaultDecoration(
-                          labelText: 'Nome Completo *',
-                          prefixIcon: const Icon(Icons.person, size: 20),
-                        ).copyWith(
-                          floatingLabelBehavior: FloatingLabelBehavior.never,
-                        ),
-                    validator: AppValidators.combine([
-                      AppValidators.required('Nome Completo'),
-                      AppValidators.maxLength(100, 'Nome Completo'),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Campo Telefone
-                  TextFormField(
-                    controller: _phoneController,
-                    decoration:
-                        AppInputDecoration.defaultDecoration(
-                          labelText: 'Telefone (com DDD) *',
-                          prefixIcon: const Icon(Icons.phone, size: 20),
-                          helperText: 'Ex: (11) 99999-9999',
-                        ).copyWith(
-                          floatingLabelBehavior: FloatingLabelBehavior.never,
-                        ),
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [PhoneInputFormatter()],
-                    validator: AppValidators.combine([
-                      AppValidators.required('Telefone'),
-                      AppValidators.phone(),
-                    ]),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Campos de Endereço Estruturado
-                  Text(
-                    'ENDEREÇO RESIDENCIAL',
-                    style: AppTextStyles.sectionHeader(),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Linha CEP e Estado (UF)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: TextFormField(
-                          controller: _cepController,
-                          decoration:
-                              AppInputDecoration.defaultDecoration(
-                                labelText: 'CEP *',
-                                prefixIcon: const Icon(Icons.map, size: 20),
-                                helperText: 'Ex: 01001-000',
-                                suffixIcon: _isLoadingCep
-                                    ? const Padding(
-                                        padding: EdgeInsets.all(12.0),
-                                        child: SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                      )
-                                    : null,
-                              ).copyWith(
-                                floatingLabelBehavior:
-                                    FloatingLabelBehavior.never,
-                              ),
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [CepInputFormatter()],
-                          validator: AppValidators.combine([
-                            AppValidators.required('CEP'),
-                            AppValidators.cep(),
-                          ]),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: TextFormField(
-                          controller: _stateController,
-                          decoration:
-                              AppInputDecoration.defaultDecoration(
-                                labelText: 'Estado (UF) *',
-                                helperText: 'Ex: SP',
-                              ).copyWith(
-                                floatingLabelBehavior:
-                                    FloatingLabelBehavior.never,
-                              ),
-                          textCapitalization: TextCapitalization.characters,
-                          validator: AppValidators.combine([
-                            AppValidators.required('Estado (UF)'),
-                            AppValidators.minLength(2, 'Estado (UF)'),
-                            AppValidators.maxLength(2, 'Estado (UF)'),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Campo Cidade
-                  TextFormField(
-                    controller: _cityController,
-                    decoration:
-                        AppInputDecoration.defaultDecoration(
-                          labelText: 'Cidade *',
-                          prefixIcon: const Icon(Icons.location_city, size: 20),
-                        ).copyWith(
-                          floatingLabelBehavior: FloatingLabelBehavior.never,
-                        ),
-                    validator: AppValidators.combine([
-                      AppValidators.required('Cidade'),
-                      AppValidators.maxLength(100, 'Cidade'),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Campo Bairro
-                  TextFormField(
-                    controller: _districtController,
-                    decoration:
-                        AppInputDecoration.defaultDecoration(
-                          labelText: 'Bairro *',
-                          prefixIcon: const Icon(Icons.layers, size: 20),
-                        ).copyWith(
-                          floatingLabelBehavior: FloatingLabelBehavior.never,
-                        ),
-                    validator: AppValidators.combine([
-                      AppValidators.required('Bairro'),
-                      AppValidators.maxLength(100, 'Bairro'),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Linha Rua e Número
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: TextFormField(
-                          controller: _streetController,
-                          decoration:
-                              AppInputDecoration.defaultDecoration(
-                                labelText: 'Rua / Logradouro *',
-                                prefixIcon: const Icon(Icons.home, size: 20),
-                              ).copyWith(
-                                floatingLabelBehavior:
-                                    FloatingLabelBehavior.never,
-                              ),
-                          validator: AppValidators.combine([
-                            AppValidators.required('Rua / Logradouro'),
-                            AppValidators.maxLength(150, 'Rua / Logradouro'),
-                          ]),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 1,
-                        child: TextFormField(
-                          controller: _numberController,
-                          decoration:
-                              AppInputDecoration.defaultDecoration(
-                                labelText: 'Nº *',
-                              ).copyWith(
-                                floatingLabelBehavior:
-                                    FloatingLabelBehavior.never,
-                              ),
-                          validator: AppValidators.combine([
-                            AppValidators.required('Número'),
-                            AppValidators.maxLength(20, 'Número'),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Campo Complemento
-                  TextFormField(
-                    controller: _complementController,
-                    decoration:
-                        AppInputDecoration.defaultDecoration(
-                          labelText: 'Complemento (Opcional)',
-                          prefixIcon: const Icon(Icons.info_outline, size: 20),
-                          helperText: 'Ex: Bloco B, Apt 104',
-                        ).copyWith(
-                          floatingLabelBehavior: FloatingLabelBehavior.never,
-                        ),
-                    validator: AppValidators.combine([
-                      AppValidators.maxLength(150, 'Complemento'),
-                    ]),
-                  ),
-                  const SizedBox(height: 32),
 
                   // Botão Salvar Alterações
                   if (profileState.isLoading)
                     const Center(child: CircularProgressIndicator())
                   else
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: AppButtonStyles.primary(),
-                        onPressed: _isLoadingCep
-                            ? null
-                            : () => _saveChanges(profile),
-                        child: const Text('Salvar Alterações'),
-                      ),
+                    ElevatedButton(
+                      style: AppButtonStyles.primary(),
+                      onPressed: _isLoadingCep
+                          ? null
+                          : () => _saveChanges(profile),
+                      child: const Text('Salvar alterações'),
                     ),
 
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
 
-                  // Botão de Excluir Conta
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: AppColors.error.withAlpha(77),
-                      ),
-                      borderRadius: BorderRadius.circular(12),
+                  // Excluir conta
+                  Text(
+                    'Excluir a conta remove permanentemente seus dados e todos os seus alertas.',
+                    style: AppTextStyles.bodySmall(),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.error,
                     ),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Text(
-                          'A exclusão da conta é permanente e removerá todos os seus alertas ativos.',
-                          style: AppTextStyles.bodySmall(),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            style: AppButtonStyles.danger(),
-                            icon: const Icon(Icons.delete_forever, size: 18),
-                            label: const Text('Excluir Conta Permanentemente'),
-                            onPressed: _confirmDeleteAccount,
-                          ),
-                        ),
-                      ],
-                    ),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Excluir minha conta'),
+                    onPressed: _confirmDeleteAccount,
                   ),
                 ],
               ),
@@ -693,20 +789,75 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ? err.message
               : 'Falha ao carregar perfil.';
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(errMsg, style: const TextStyle(color: Colors.red)),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.refresh(profileControllerProvider),
-                  child: const Text('Tentar Novamente'),
-                ),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    errMsg,
+                    style: AppTextStyles.body(color: AppColors.error),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => ref.refresh(profileControllerProvider),
+                    child: const Text('Tentar novamente'),
+                  ),
+                ],
+              ),
             ),
           );
         },
       ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  const _SectionCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _MenuTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _MenuTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, size: 22),
+      title: Text(title),
+      trailing: const Icon(
+        Icons.chevron_right_rounded,
+        color: AppColors.textSecondary,
+      ),
+      onTap: onTap,
     );
   }
 }

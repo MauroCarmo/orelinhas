@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 
 /// Decorações de entrada de texto padronizadas reutilizáveis em todas as telas.
+/// O visual (bordas, cores, fontes) vem do `inputDecorationTheme` global.
 class AppInputDecoration {
   AppInputDecoration._();
 
   /// Cria um InputDecoration padronizado para o sistema.
-  /// Se [isSearch] for true, os padding verticais são menores.
+  /// Se [isSearch] for true, o campo fica em formato pílula e mais baixo.
   static InputDecoration defaultDecoration({
     required String labelText,
     String? hintText,
@@ -17,53 +17,39 @@ class AppInputDecoration {
     bool isSearch = false,
   }) {
     return InputDecoration(
-      labelText: labelText,
+      labelText: labelText.isEmpty ? null : labelText,
       hintText: hintText,
       helperText: helperText,
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
-      filled: true,
-      fillColor: AppColors.surfaceLight,
       contentPadding: EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: isSearch ? 10 : 14,
+        horizontal: 16,
+        vertical: isSearch ? 12 : 15,
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: AppColors.border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: AppColors.error),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(color: AppColors.error, width: 1.5),
-      ),
-      disabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(11),
-        borderSide: BorderSide(color: AppColors.border.withAlpha(128)),
-      ),
-      labelStyle: GoogleFonts.lato(
-        fontSize: 13,
-        color: AppColors.textSecondary,
-      ),
-      hintStyle: GoogleFonts.lato(
-        fontSize: 13,
-        color: AppColors.textSecondary,
-      ),
-      helperStyle: GoogleFonts.lato(
-        fontSize: 11,
-        color: AppColors.textSecondary,
-      ),
-      errorStyle: GoogleFonts.lato(
-        fontSize: 11,
-        color: AppColors.error,
-      ),
+      border: isSearch ? _pill(AppColors.border) : null,
+      enabledBorder: isSearch ? _pill(AppColors.border) : null,
+      focusedBorder: isSearch ? _pill(AppColors.primary, width: 1.6) : null,
+    );
+  }
+
+  static OutlineInputBorder _pill(Color color, {double width = 1}) {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(30),
+      borderSide: BorderSide(color: color, width: width),
+    );
+  }
+}
+
+/// Rótulo acima de um campo de formulário, no estilo do protótipo.
+class FieldLabel extends StatelessWidget {
+  final String text;
+  const FieldLabel(this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, left: 2),
+      child: Text(text, style: AppTextStyles.label()),
     );
   }
 }

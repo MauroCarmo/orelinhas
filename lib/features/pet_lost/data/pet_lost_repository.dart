@@ -17,48 +17,15 @@ class PetLostRepository {
 
   PetLostRepository(this._supabase);
 
-  /// Recupera um alerta de pet perdido pelo ID específico.
-  Future<PetLostAlertEntity?> getAlertById(String id) async {
-    _logger.i('Buscando alerta de pet perdido por ID.', context: {'id': id});
+  /// Recupera todos os alertas públicos (Feed).
+  Future<List<PetLostAlertEntity>> getPublicAlerts({int limit = 20, int offset = 0}) async {
+    _logger.i('Buscando feed público de alertas de pets perdidos.', context: {'limit': limit, 'offset': offset});
 
     try {
       final data = await _supabase
           .from('pet_lost_alerts')
           .select()
-          .eq('id', id)
-          .maybeSingle();
-
-      if (data == null) return null;
-      return PetLostAlertEntity.fromJson(data);
-    } catch (e, st) {
-      _logger.w('Alerta de pet perdido não encontrado ou erro.', error: e, stackTrace: st);
-      return null;
-    }
-  }
-
-  /// Recupera todos os alertas públicos (Feed) com filtro opcional por espécie.
-  Future<List<PetLostAlertEntity>> getPublicAlerts({
-    int limit = 20,
-    int offset = 0,
-    PetType? petType,
-  }) async {
-    _logger.i('Buscando feed público de alertas de pets perdidos.', context: {
-      'limit': limit,
-      'offset': offset,
-      'petType': petType?.name,
-    });
-
-    try {
-      var query = _supabase
-          .from('pet_lost_alerts')
-          .select()
-          .eq('status', 'active');
-
-      if (petType != null) {
-        query = query.eq('pet_type', petType.name);
-      }
-
-      final data = await query
+          .eq('status', 'active')
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
 
@@ -102,7 +69,7 @@ class PetLostRepository {
   /// Insere um novo alerta de pet perdido.
   /// Realiza a sanitização exclusiva dos campos técnicos antes de persistir.
   /// O user_id é imperativamente injetado a partir da sessão autenticada.
-  Future<PetLostAlertEntity> createAlert(String userId, PetLostAlertEntity alert) async {
+  Future<void> createAlert(String userId, PetLostAlertEntity alert) async {
     _logger.i('Iniciando criação de alerta de pet perdido no repositório.', context: {'userId': userId});
 
     // Sanitização de dados ANTES da persistência (Exclusividade do Repositório)
@@ -119,14 +86,8 @@ class PetLostRepository {
     );
 
     try {
-      final data = await _supabase
-          .from('pet_lost_alerts')
-          .insert(sanitizedAlert.toJson())
-          .select()
-          .single();
-      final created = PetLostAlertEntity.fromJson(data);
-      _logger.i('Alerta de pet perdido inserido com sucesso.', context: {'userId': userId, 'id': created.id});
-      return created;
+      await _supabase.from('pet_lost_alerts').insert(sanitizedAlert.toJson());
+      _logger.i('Alerta de pet perdido inserido com sucesso.', context: {'userId': userId});
     } catch (e, st) {
       _logger.e('Erro técnico ao inserir alerta no Supabase.', error: e, stackTrace: st, context: {'userId': userId});
       throw AppErrorMapper.map(e, st);

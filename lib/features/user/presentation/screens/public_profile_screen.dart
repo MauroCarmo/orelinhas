@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../controllers/public_profile_controller.dart';
 import '../../domain/profile_entity.dart';
 
@@ -16,7 +18,7 @@ class PublicProfileScreen extends ConsumerWidget {
     final profileAsync = ref.watch(publicProfileProvider(userId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Perfil do Dono')),
+      appBar: AppBar(title: const Text('Falar com o tutor')),
       body: profileAsync.when(
         data: (profile) => _ProfileContent(profile: profile),
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -25,19 +27,30 @@ class PublicProfileScreen extends ConsumerWidget {
               ? err.message
               : 'Erro ao carregar perfil.';
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                const SizedBox(height: 16),
-                Text(msg, style: const TextStyle(fontSize: 16)),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () =>
-                      ref.invalidate(publicProfileProvider(userId)),
-                  child: const Text('Tentar novamente'),
-                ),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    size: 56,
+                    color: AppColors.error,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    msg,
+                    style: AppTextStyles.body(),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: () =>
+                        ref.invalidate(publicProfileProvider(userId)),
+                    child: const Text('Tentar novamente'),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -62,79 +75,90 @@ class _ProfileContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final phone = profile.phone;
     final location = profile.location;
+    final hasAvatar =
+        profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty;
 
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Foto placeholder (futuramente avatar)
-          CircleAvatar(
-            radius: 60,
-            backgroundColor: Colors.blueGrey[100],
-            backgroundImage:
-                profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty
-                ? NetworkImage(profile.avatarUrl!)
-                : null,
-            child: profile.avatarUrl == null || profile.avatarUrl!.isEmpty
-                ? Icon(Icons.person, size: 60, color: Colors.blueGrey[600])
-                : null,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            profile.name,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          if (phone.isNotEmpty)
-            Text(
-              phone,
-              style: const TextStyle(fontSize: 18, color: Colors.black87),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(24),
             ),
-          if (location.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Column(
               children: [
-                Icon(Icons.location_on, size: 18, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    location,
-                    style: const TextStyle(fontSize: 14, color: Colors.black54),
-                    textAlign: TextAlign.center,
-                  ),
+                CircleAvatar(
+                  radius: 52,
+                  backgroundColor: AppColors.primarySoft,
+                  backgroundImage: hasAvatar
+                      ? NetworkImage(profile.avatarUrl!)
+                      : null,
+                  child: hasAvatar
+                      ? null
+                      : const Icon(
+                          Icons.person_rounded,
+                          size: 52,
+                          color: AppColors.primary,
+                        ),
                 ),
+                const SizedBox(height: 16),
+                Text(
+                  profile.name,
+                  style: AppTextStyles.heading1(),
+                  textAlign: TextAlign.center,
+                ),
+                if (location.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.place_outlined,
+                        size: 17,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          location,
+                          style: AppTextStyles.body(
+                            color: AppColors.textSecondary,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (phone.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    phone,
+                    style: AppTextStyles.body(color: AppColors.textSecondary),
+                  ),
+                ],
               ],
             ),
-          ],
-          const SizedBox(height: 32),
+          ),
+          const SizedBox(height: 20),
           if (phone.isNotEmpty) ...[
-            // Botão Ligar
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 50),
-                backgroundColor: Colors.green,
-              ),
-              icon: const Icon(Icons.phone, color: Colors.white),
-              label: const Text(
-                'Ligar',
-                style: TextStyle(color: Colors.white, fontSize: 18),
-              ),
-              onPressed: () => _launchUrl('tel:$phone'),
+            Text(
+              'Conte onde e quando você viu o pet. Uma foto ajuda muito.',
+              style: AppTextStyles.body(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             // Botão WhatsApp
             ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 50),
-                backgroundColor: const Color(0xFF25D366),
+              style: AppButtonStyles.primary(
+                backgroundColor: const Color(0xFF1FAF5A),
               ),
-              icon: const Icon(Icons.chat, color: Colors.white),
-              label: const Text(
-                'WhatsApp',
-                style: TextStyle(color: Colors.white, fontSize: 18),
-              ),
+              icon: const Icon(Icons.chat_rounded),
+              label: const Text('Conversar no WhatsApp'),
               onPressed: () {
                 // Assume que o telefone já está no formato DDD + número (ex: 11999999999)
                 // Para Brasil, adiciona o código +55. Ajuste conforme necessário.
@@ -142,7 +166,19 @@ class _ProfileContent extends StatelessWidget {
                 _launchUrl(whatsappUrl);
               },
             ),
-          ],
+            const SizedBox(height: 12),
+            // Botão Ligar
+            OutlinedButton.icon(
+              icon: const Icon(Icons.phone_outlined),
+              label: const Text('Ligar'),
+              onPressed: () => _launchUrl('tel:$phone'),
+            ),
+          ] else
+            Text(
+              'Este tutor ainda não informou um telefone.',
+              style: AppTextStyles.body(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
         ],
       ),
     );

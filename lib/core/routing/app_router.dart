@@ -8,18 +8,14 @@ import '../../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../../features/auth/presentation/screens/update_password_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/user/presentation/screens/profile_screen.dart';
+import '../../features/pet_lost/domain/pet_lost_entity.dart';
 import '../../features/pet_lost/presentation/screens/pet_lost_list_screen.dart';
+import '../../features/pet_lost/presentation/screens/pet_lost_detail_screen.dart';
 import '../../features/pet_lost/presentation/screens/create_pet_lost_screen.dart';
 import '../../features/user/presentation/screens/public_profile_screen.dart';
 import '../../features/pet_lost/presentation/screens/pet_lost_map_screen.dart';
-import '../../features/pet_found/presentation/screens/pet_found_list_screen.dart';
-import '../../features/pet_found/presentation/screens/create_pet_found_screen.dart';
-import '../../features/pet_found/presentation/screens/pet_found_map_screen.dart';
-import '../../features/pet_adoption/presentation/screens/pet_adoption_list_screen.dart';
-import '../../features/pet_adoption/presentation/screens/create_pet_adoption_screen.dart';
-import '../../features/notification/presentation/screens/notification_list_screen.dart';
-import '../../features/pet_recognition/presentation/screens/pet_match_results_screen.dart';
-import '../../features/pet_recognition/presentation/screens/pet_match_detail_screen.dart';
+import '../../features/welcome/presentation/screens/welcome_screen.dart';
+import '../widgets/app_shell.dart';
 import 'app_routes.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -27,29 +23,34 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
 
   return GoRouter(
-    initialLocation: AppRoutes.login,
+    initialLocation: AppRoutes.welcome,
     redirect: (context, state) {
       // Pega o status atual da sessão
       final authStateVal = authState.value;
       final isAuthenticated = authStateVal?.session != null;
       final authEvent = authStateVal?.event;
-      
+
       // Quando o deep link de recuperação de senha for clicado
-      if (authEvent == AuthChangeEvent.passwordRecovery && state.matchedLocation != AppRoutes.updatePassword) {
+      if (authEvent == AuthChangeEvent.passwordRecovery &&
+          state.matchedLocation != AppRoutes.updatePassword) {
         return AppRoutes.updatePassword;
       }
-      
+
       // Rotas públicas (que usuários não logados podem acessar)
-      final isLoggingIn = state.matchedLocation == AppRoutes.login || 
-                          state.matchedLocation == AppRoutes.register ||
-                          state.matchedLocation == AppRoutes.forgotPassword;
+      final isLoggingIn =
+          state.matchedLocation == AppRoutes.welcome ||
+          state.matchedLocation == AppRoutes.login ||
+          state.matchedLocation == AppRoutes.register ||
+          state.matchedLocation == AppRoutes.forgotPassword;
 
       // Redirecionamento (Auth Guard)
-      if (!isAuthenticated && !isLoggingIn && state.matchedLocation != AppRoutes.updatePassword) {
+      if (!isAuthenticated &&
+          !isLoggingIn &&
+          state.matchedLocation != AppRoutes.updatePassword) {
         // Bloqueia qualquer rota privada se não estiver logado
-        return AppRoutes.login;
+        return AppRoutes.welcome;
       }
-      
+
       if (isAuthenticated && isLoggingIn) {
         // Redireciona para a home se estiver logado e tentar acessar login/registro
         return AppRoutes.home;
@@ -59,6 +60,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+        path: AppRoutes.welcome,
+        builder: (context, state) => const WelcomeScreen(),
+      ),
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),
@@ -75,18 +80,38 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.updatePassword,
         builder: (context, state) => const UpdatePasswordScreen(),
       ),
-      GoRoute(
-        path: AppRoutes.home,
-        builder: (context, state) => const HomeScreen(),
+
+      // Áreas principais com barra de navegação inferior
+      ShellRoute(
+        builder: (context, state, child) =>
+            AppShell(location: state.uri.path, child: child),
+        routes: [
+          GoRoute(
+            path: AppRoutes.home,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: HomeScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.petLost,
+            pageBuilder: (context, state) => NoTransitionPage(
+              child: PetLostListScreen(
+                initialTab: state.uri.queryParameters['aba'] == 'meus' ? 1 : 0,
+              ),
+            ),
+          ),
+          GoRoute(
+            path: AppRoutes.petLostMap,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: PetLostMapScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.profile,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: ProfileScreen()),
+          ),
+        ],
       ),
-      GoRoute(
-        path: AppRoutes.profile,
-        builder: (context, state) => const ProfileScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petLost,
-        builder: (context, state) => const PetLostListScreen(),
-      ),
+
       GoRoute(
         path: AppRoutes.petLostCreate,
         builder: (context, state) => const CreatePetLostScreen(),
@@ -99,18 +124,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: AppRoutes.petFound,
-        builder: (context, state) => const PetFoundListScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petFoundCreate,
-        builder: (context, state) => const CreatePetFoundScreen(),
-      ),
-      GoRoute(
-        path: '/pet-found/edit/:id',
+        path: '/pet-lost/details/:id',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return CreatePetFoundScreen(alertId: id);
+          final initial = state.extra is PetLostAlertEntity
+              ? state.extra as PetLostAlertEntity
+              : null;
+          return PetLostDetailScreen(alertId: id, initialAlert: initial);
         },
       ),
       GoRoute(
@@ -118,58 +138,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final userId = state.pathParameters['userId']!;
           return PublicProfileScreen(userId: userId);
-        },
-      ),
-      GoRoute(
-        path: AppRoutes.petLostMap,
-        builder: (context, state) => const PetLostMapScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petFoundMap,
-        builder: (context, state) => const PetFoundMapScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petAdoption,
-        builder: (context, state) => const PetAdoptionListScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petAdoptionCreate,
-        builder: (context, state) => const CreatePetAdoptionScreen(),
-      ),
-      GoRoute(
-        path: '/pet-adoption/edit/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          return CreatePetAdoptionScreen(alertId: id);
-        },
-      ),
-      GoRoute(
-        path: AppRoutes.notifications,
-        builder: (context, state) => const NotificationListScreen(),
-      ),
-      GoRoute(
-        path: '/pet-matches/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final targetFoundPetId = state.uri.queryParameters['foundId'];
-          return PetMatchResultsScreen(
-            petId: id,
-            initialHighlightPetId: targetFoundPetId,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/match-detail/:foundId',
-        builder: (context, state) {
-          final foundId = state.pathParameters['foundId']!;
-          final lostId = state.uri.queryParameters['lostId'];
-          final scoreStr = state.uri.queryParameters['score'];
-          final score = scoreStr != null ? double.tryParse(scoreStr) : null;
-          return PetMatchDetailScreen(
-            foundPetId: foundId,
-            lostPetId: lostId,
-            initialScore: score,
-          );
         },
       ),
     ],

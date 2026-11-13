@@ -7,6 +7,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../controllers/auth_controller.dart';
+import '../widgets/auth_layout.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -18,6 +19,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -28,23 +30,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   void _login() async {
     final email = AppSanitizers.normalizeEmail(_emailController.text);
-    final password = _passwordController.text; // Senhas não sofrem normalização destrutiva
+    final password =
+        _passwordController.text; // Senhas não sofrem normalização destrutiva
 
     final authCtrl = ref.read(authControllerProvider.notifier);
     await authCtrl.signIn(email, password);
-    
+
     if (!mounted) return;
-    
+
     // Mostra erro caso exista
     final state = ref.read(authControllerProvider);
     if (state.hasError) {
       final error = state.error;
-      final errorMessage = error is AppException ? error.message : 'Ocorreu um erro inesperado.';
+      final errorMessage = error is AppException
+          ? error.message
+          : 'Ocorreu um erro inesperado.';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorMessage),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(errorMessage), backgroundColor: AppColors.error),
       );
     }
   }
@@ -58,106 +60,95 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
+    return AuthLayout(
+      title: 'Que bom te ver de novo',
+      subtitle:
+          'Entre para acompanhar seus alertas e ajudar pets perto de você.',
+      children: [
+        const FieldLabel('E-mail'),
+        TextField(
+          controller: _emailController,
+          decoration: AppInputDecoration.defaultDecoration(
+            labelText: '',
+            hintText: 'seuemail@exemplo.com',
+            prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
+          ),
+          keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.email],
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 18),
+        const FieldLabel('Senha'),
+        TextField(
+          controller: _passwordController,
+          decoration: AppInputDecoration.defaultDecoration(
+            labelText: '',
+            hintText: 'Sua senha',
+            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+            suffixIcon: IconButton(
+              tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
+              icon: Icon(
+                _obscurePassword
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 20,
+              ),
+              onPressed: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
+            ),
+          ),
+          obscureText: _obscurePassword,
+          autofillHints: const [AutofillHints.password],
+          onSubmitted: (_) => isLoading ? null : _login(),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: () => context.push('/forgot-password'),
+            child: const Text('Esqueci minha senha'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ElevatedButton(
+          style: AppButtonStyles.primary(),
+          onPressed: isLoading ? null : _login,
+          child: isLoading ? const ButtonSpinner() : const Text('Entrar'),
+        ),
+        const SizedBox(height: 22),
+        Row(
           children: [
-            const Icon(Icons.pets, color: AppColors.primary, size: 24),
-            const SizedBox(width: 8),
-            Text('Orelinhas', style: AppTextStyles.heading2(color: AppColors.primary)),
+            const Expanded(child: Divider()),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text('ou', style: AppTextStyles.bodySmall()),
+            ),
+            const Expanded(child: Divider()),
           ],
         ),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(25, 40, 25, 90),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(height: 22),
+        OutlinedButton.icon(
+          style: AppButtonStyles.outlined(
+            foregroundColor: AppColors.textPrimary,
+          ),
+          onPressed: isLoading ? null : _loginWithGoogle,
+          icon: const Icon(Icons.g_mobiledata_rounded, size: 30),
+          label: const Text('Entrar com Google'),
+        ),
+        const SizedBox(height: 28),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Bem-vindo ao Orelinhas', style: AppTextStyles.heading1()),
-            const SizedBox(height: 8),
             Text(
-              'Autentique sua conta para sincronizar dados e monitorar alertas biométricos.',
+              'Ainda não tem conta?',
               style: AppTextStyles.body(color: AppColors.textSecondary),
             ),
-            const SizedBox(height: 35),
-            
-            // Email Input
-            Text(
-              'E-mail ou Usuário',
-              style: AppTextStyles.label(),
+            TextButton(
+              onPressed: () => context.push('/register'),
+              child: const Text('Criar conta'),
             ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _emailController,
-              decoration: AppInputDecoration.defaultDecoration(
-                labelText: '',
-                hintText: 'beatriz.oliveira@email.com',
-                prefixIcon: const Icon(Icons.email, size: 20),
-              ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-            
-            // Password Input
-            Text(
-              'Senha de Acesso',
-              style: AppTextStyles.label(),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _passwordController,
-              decoration: AppInputDecoration.defaultDecoration(
-                labelText: '',
-                hintText: '••••••••',
-                prefixIcon: const Icon(Icons.lock, size: 20),
-              ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.never),
-              obscureText: true,
-            ),
-            const SizedBox(height: 8),
-            
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => context.push('/forgot-password'),
-                child: const Text('Esqueceu a senha?'),
-              ),
-            ),
-            const SizedBox(height: 24),
-            
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: AppButtonStyles.primary(),
-                onPressed: isLoading ? null : _login,
-                child: isLoading 
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
-                    : const Text('Acessar Ecossistema'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: AppButtonStyles.outlined(),
-                onPressed: isLoading ? null : _loginWithGoogle,
-                icon: const Icon(Icons.g_mobiledata, size: 28),
-                label: const Text('Entrar com Google'),
-              ),
-            ),
-            const SizedBox(height: 24),
-            
-            Center(
-              child: TextButton(
-                onPressed: () => context.push('/register'),
-                child: const Text('Não tem uma conta? Registre-se'),
-              ),
-            )
           ],
         ),
-      ),
+      ],
     );
   }
 }
