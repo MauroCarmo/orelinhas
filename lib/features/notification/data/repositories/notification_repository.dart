@@ -18,7 +18,10 @@ class NotificationRepository {
 
   /// Busca a lista de notificações do usuário autenticado.
   Future<List<NotificationEntity>> getUserNotifications(String userId) async {
-    _logger.i('Obtendo notificações do usuário no repositório.', context: {'userId': userId});
+    _logger.i(
+      'Obtendo notificações do usuário no repositório.',
+      context: {'userId': userId},
+    );
     return await _service.getNotifications(userId);
   }
 
@@ -37,6 +40,19 @@ class NotificationRepository {
     await _service.updatePushToken(userId, token);
   }
 
+  String _extractCityUf(String rawLocation) {
+    final trimmed = rawLocation.trim();
+    if (trimmed.contains('Cidade/UF:')) {
+      for (final part in trimmed.split(' | ')) {
+        final item = part.trim();
+        if (item.startsWith('Cidade/UF:')) {
+          return item.substring(10).trim().replaceAll('/', '-');
+        }
+      }
+    }
+    return trimmed.replaceAll('/', '-');
+  }
+
   /// Gera uma notificação de match de IA para o tutor do pet perdido.
   Future<void> notifyMatchFound({
     required String recipientUserId,
@@ -46,21 +62,29 @@ class NotificationRepository {
     required String foundPetId,
     required double similarityScore,
   }) async {
-    _logger.i('Gerando notificação de match visual/cadastral.', context: {
-      'recipientUserId': recipientUserId,
-      'lostPetId': lostPetId,
-      'foundPetId': foundPetId,
-      'similarity': similarityScore,
-    });
+    _logger.i(
+      'Gerando notificação de match visual/cadastral.',
+      context: {
+        'recipientUserId': recipientUserId,
+        'lostPetId': lostPetId,
+        'foundPetId': foundPetId,
+        'similarity': similarityScore,
+      },
+    );
 
-    final percentage = (similarityScore * 100).toStringAsFixed(1);
-    final deterministicId = 'notif_match_${recipientUserId}_${lostPetId}_$foundPetId';
+    final cityUf = _extractCityUf(foundLocation);
+    final bodyText = cityUf.isNotEmpty
+        ? 'Localizado em $cityUf'
+        : 'Nova correspondência visual identificada';
+    final deterministicId =
+        'notif_match_${recipientUserId}_${lostPetId}_$foundPetId';
+
     final notification = NotificationEntity(
       id: deterministicId,
       userId: recipientUserId,
       type: NotificationType.matchFound,
-      title: 'Possível correspondência encontrada! ($percentage%)',
-      body: 'Um pet com características semelhantes a "$lostPetName" foi avistado em $foundLocation. Toque para conferir.',
+      title: 'Pet semelhante a "$lostPetName"',
+      body: bodyText,
       createdAt: DateTime.now(),
       isRead: false,
       relatedPetId: lostPetId,
@@ -68,7 +92,7 @@ class NotificationRepository {
       metadata: {
         'similarity_score': similarityScore,
         'lost_pet_name': lostPetName,
-        'found_location': foundLocation,
+        'found_location': cityUf,
       },
     );
 

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
 import '../../../pet_lost/data/pet_lost_repository.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart';
@@ -42,19 +42,18 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
   Future<void> _loadMatches() async {
     PetLostAlertEntity? pet;
 
-    // 1. Tenta obter do estado local do controller
     final currentAlerts = ref.read(petLostControllerProvider).value;
     if (currentAlerts != null && currentAlerts.isNotEmpty) {
       pet = currentAlerts.where((e) => e.id == widget.petId).firstOrNull;
     }
 
-    // 2. Se não estiver no cache em memória, busca diretamente no repositório
     if (pet == null) {
       final user = ref.read(currentUserProvider);
       if (user != null) {
         try {
-          final userAlerts =
-              await ref.read(petLostRepositoryProvider).getUserAlerts(user.id);
+          final userAlerts = await ref
+              .read(petLostRepositoryProvider)
+              .getUserAlerts(user.id);
           pet = userAlerts.where((e) => e.id == widget.petId).firstOrNull;
         } catch (_) {}
       }
@@ -64,22 +63,40 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       setState(() {
         _targetPet = pet;
       });
-      // Carrega correspondências persistidas sem recalcular IA
       ref.read(petMatchControllerProvider.notifier).loadPersistedMatches(pet);
     }
   }
 
-  Future<void> _contactTutor(String phone) async {
-    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-    final uri = Uri.parse('https://wa.me/55$cleanPhone');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      final telUri = Uri.parse('tel:$cleanPhone');
-      if (await canLaunchUrl(telUri)) {
-        await launchUrl(telUri);
+  String _formatLocationForDisplay(String rawLocation) {
+    final trimmed = rawLocation.trim();
+    if (!trimmed.contains('Cidade/UF:') && !trimmed.contains(' | ')) {
+      return trimmed;
+    }
+
+    String district = '';
+    String cityUf = '';
+
+    for (final part in trimmed.split(' | ')) {
+      final item = part.trim();
+      if (item.startsWith('Bairro:')) {
+        district = item.substring(7).trim();
+      } else if (item.startsWith('Cidade/UF:')) {
+        cityUf = item.substring(10).trim();
       }
     }
+
+    final parts = <String>[
+      if (district.isNotEmpty) district,
+      if (cityUf.isNotEmpty) cityUf,
+    ];
+    return parts.isNotEmpty ? parts.join(', ') : trimmed;
+  }
+
+  String _formatDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year;
+    return '$day/$month/$year';
   }
 
   @override
@@ -87,15 +104,22 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
     final matchState = ref.watch(petMatchControllerProvider);
 
     return Scaffold(
+      backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
-        title: const Text('Possíveis Correspondências'),
+        title: Text(
+          'Possíveis Correspondências',
+          style: AppTextStyles.heading2(color: Colors.white),
+        ),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
       ),
       body: matchState.isLoading
           ? const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(),
+                  CircularProgressIndicator(color: AppColors.primary),
                   SizedBox(height: 16),
                   Text('Buscando e refinando correspondências com IA...'),
                 ],
@@ -106,26 +130,18 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Cabeçalho com o pet pesquisado
                   if (_targetPet != null) _buildQueryPetCard(_targetPet!),
                   const SizedBox(height: 16),
 
-                  // Botão de nova busca manual (threshold fixo em 88% — controlado pelo servidor)
                   _buildNewSearchButton(matchState),
                   const SizedBox(height: 16),
 
-                  // Aviso de responsabilidade humana
                   _buildHumanVerificationNotice(),
                   const SizedBox(height: 20),
 
-                  // Lista de correspondências
                   Text(
                     'Resultados Encontrados (${matchState.matches.length})',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blueGrey,
-                    ),
+                    style: AppTextStyles.heading3(),
                   ),
                   const SizedBox(height: 12),
 
@@ -133,10 +149,16 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                     _buildEmptyState()
                   else ...[
                     if (widget.initialHighlightPetId != null &&
-                        matchState.matches.any((m) => m.matchedPet.id == widget.initialHighlightPetId))
+                        matchState.matches.any(
+                          (m) =>
+                              m.matchedPet.id == widget.initialHighlightPetId,
+                        ))
                       Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.purple.shade50,
                           borderRadius: BorderRadius.circular(8),
@@ -144,7 +166,11 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.stars, color: Colors.purple.shade700, size: 20),
+                            Icon(
+                              Icons.stars,
+                              color: Colors.purple.shade700,
+                              size: 20,
+                            ),
                             const SizedBox(width: 8),
                             const Expanded(
                               child: Text(
@@ -163,9 +189,12 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _getSortedMatches(matchState.matches).length,
-                      separatorBuilder: (context, index) => const SizedBox(height: 16),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 16),
                       itemBuilder: (context, index) {
-                        final candidate = _getSortedMatches(matchState.matches)[index];
+                        final candidate = _getSortedMatches(
+                          matchState.matches,
+                        )[index];
                         return _buildMatchCandidateCard(candidate);
                       },
                     ),
@@ -181,7 +210,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
@@ -215,15 +244,18 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
               children: [
                 Text(
                   'Buscando para: ${pet.petName}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                  style: AppTextStyles.heading3(),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${pet.petType == PetType.dog ? 'Cachorro' : pet.petType == PetType.cat ? 'Gato' : 'Outro'} • ${pet.breed ?? 'Sem raça'}',
-                  style: const TextStyle(color: Colors.black54, fontSize: 13),
+                  '${pet.petType == PetType.dog
+                      ? 'Cachorro'
+                      : pet.petType == PetType.cat
+                      ? 'Gato'
+                      : 'Outro'} • ${pet.breed ?? 'Sem raça'}',
+                  style: AppTextStyles.bodySmall(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -237,6 +269,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
+        style: AppButtonStyles.outlined(),
         icon: const Icon(Icons.refresh, size: 18),
         label: const Text('Executar Nova Busca Ativa'),
         onPressed: state.isLoading || _targetPet == null
@@ -255,7 +288,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.amber.shade50,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.amber.shade300),
       ),
       child: Row(
@@ -279,9 +312,9 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       padding: const EdgeInsets.all(28),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: [
@@ -303,121 +336,34 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
     );
   }
 
-  List<PetMatchCandidateEntity> _getSortedMatches(List<PetMatchCandidateEntity> matches) {
-    if (widget.initialHighlightPetId == null || widget.initialHighlightPetId!.isEmpty) {
+  List<PetMatchCandidateEntity> _getSortedMatches(
+    List<PetMatchCandidateEntity> matches,
+  ) {
+    if (widget.initialHighlightPetId == null ||
+        widget.initialHighlightPetId!.isEmpty) {
       return matches;
     }
-    final highlighted = matches.where((m) => m.matchedPet.id == widget.initialHighlightPetId).toList();
-    final others = matches.where((m) => m.matchedPet.id != widget.initialHighlightPetId).toList();
+    final highlighted = matches
+        .where((m) => m.matchedPet.id == widget.initialHighlightPetId)
+        .toList();
+    final others = matches
+        .where((m) => m.matchedPet.id != widget.initialHighlightPetId)
+        .toList();
     return [...highlighted, ...others];
-  }
-
-  void _showManualComparisonDialog(PetMatchCandidateEntity candidate) {
-    final lost = _targetPet;
-    final found = candidate.matchedPet;
-    final scorePct = (candidate.similarityScore * 100).toStringAsFixed(1);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.compare, color: AppColors.primary),
-            SizedBox(width: 8),
-            Text('Comparação Visual', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Similaridade calculada por IA: $scorePct%',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        const Text('Pet Perdido', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const SizedBox(height: 6),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: lost?.imageUrl != null
-                              ? Image.network(lost!.imageUrl!, height: 110, width: double.infinity, fit: BoxFit.cover)
-                              : Container(height: 110, color: Colors.grey.shade200, child: const Icon(Icons.pets)),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(lost?.petName ?? 'Seu Pet', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        const Text('Pet Encontrado', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const SizedBox(height: 6),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: found.imageUrl != null
-                              ? Image.network(found.imageUrl!, height: 110, width: double.infinity, fit: BoxFit.cover)
-                              : Container(height: 110, color: Colors.grey.shade200, child: const Icon(Icons.pets)),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(found.petName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Local de avistamento: ${found.lastLocation}',
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Fechar'),
-          ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.chat, size: 14),
-            label: const Text('Contatar'),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _contactTutor(found.contact);
-            },
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildMatchCandidateCard(PetMatchCandidateEntity candidate) {
     final pet = candidate.matchedPet;
-    final isHighlighted = widget.initialHighlightPetId != null &&
+    final isHighlighted =
+        widget.initialHighlightPetId != null &&
         widget.initialHighlightPetId == pet.id;
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isHighlighted ? Colors.purple.shade600 : Colors.grey.shade300,
+          color: isHighlighted ? Colors.purple.shade600 : AppColors.border,
           width: isHighlighted ? 2.0 : 1.0,
         ),
         boxShadow: [
@@ -430,6 +376,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
           ),
         ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -437,10 +384,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.purple.shade700,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              ),
+              decoration: BoxDecoration(color: Colors.purple.shade700),
               child: const Row(
                 children: [
                   Icon(Icons.auto_awesome, color: Colors.white, size: 16),
@@ -457,31 +401,25 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
               ),
             ),
 
-          // Imagem do pet candidato com badge de similaridade
           Stack(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(isHighlighted ? 0 : 13),
-                ),
-                child: pet.imageUrl != null
-                    ? Image.network(
-                        pet.imageUrl!,
-                        height: 190,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          height: 190,
-                          color: Colors.grey.shade200,
-                          child: const Icon(Icons.broken_image, size: 40),
-                        ),
-                      )
-                    : Container(
+              pet.imageUrl != null && pet.imageUrl!.isNotEmpty
+                  ? Image.network(
+                      pet.imageUrl!,
+                      height: 190,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
                         height: 190,
                         color: Colors.grey.shade200,
-                        child: const Icon(Icons.pets, size: 40),
+                        child: const Icon(Icons.broken_image, size: 40),
                       ),
-              ),
+                    )
+                  : Container(
+                      height: 190,
+                      color: Colors.grey.shade200,
+                      child: const Icon(Icons.pets, size: 40),
+                    ),
               Positioned(
                 top: 10,
                 right: 10,
@@ -498,62 +436,58 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  pet.petName,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${pet.breed ?? 'Sem raça'} • Visto em: ${pet.lastLocation}',
-                  style: const TextStyle(color: Colors.black54, fontSize: 13),
-                ),
-                if (pet.description.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    pet.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, color: Colors.black87),
-                  ),
-                ],
-                const SizedBox(height: 14),
+                Text(pet.petName, style: AppTextStyles.heading3()),
+                const SizedBox(height: 6),
                 Row(
                   children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 16,
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: 6),
                     Expanded(
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.chat, size: 16),
-                        label: const Text('Contatar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade700,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Text(
+                        'Local: ${_formatLocationForDisplay(pet.lastLocation)}',
+                        style: AppTextStyles.bodySmall(
+                          color: AppColors.textPrimary,
                         ),
-                        onPressed: () => _contactTutor(pet.contact),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.compare_arrows, size: 16),
-                      label: const Text('Comparar'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                      ),
-                      onPressed: () => _showManualComparisonDialog(candidate),
-                    ),
-                    const SizedBox(width: 6),
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                      ),
-                      onPressed: () {
-                        context.push(AppRoutes.publicProfile(pet.userId));
-                      },
-                      child: const Icon(Icons.person, size: 16),
                     ),
                   ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      size: 15,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Encontrado em: ${_formatDate(pet.lostDate)}',
+                      style: AppTextStyles.bodySmall(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: AppButtonStyles.primary(),
+                    icon: const Icon(Icons.visibility_outlined, size: 18),
+                    label: const Text('Ver Detalhes'),
+                    onPressed: () {
+                      context.push(
+                        '${AppRoutes.publicProfile(pet.userId)}?foundId=${pet.id}',
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
