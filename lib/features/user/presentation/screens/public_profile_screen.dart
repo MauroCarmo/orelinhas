@@ -8,6 +8,7 @@ import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../../core/validation/sanitizers.dart';
+import '../../../pet_adoption/domain/pet_adoption_entity.dart';
 import '../../../pet_found/data/pet_found_repository.dart';
 import '../../../pet_found/domain/pet_found_entity.dart';
 import '../../../pet_lost/data/pet_lost_repository.dart';
@@ -22,6 +23,7 @@ class PublicProfileScreen extends ConsumerStatefulWidget {
   final String? lostAlertId;
   final PetFoundAlertEntity? foundAlert;
   final String? foundAlertId;
+  final PetAdoptionAlertEntity? adoptionAlert;
 
   const PublicProfileScreen({
     super.key,
@@ -30,6 +32,7 @@ class PublicProfileScreen extends ConsumerStatefulWidget {
     this.lostAlertId,
     this.foundAlert,
     this.foundAlertId,
+    this.adoptionAlert,
   });
 
   @override
@@ -40,6 +43,7 @@ class PublicProfileScreen extends ConsumerStatefulWidget {
 class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
   PetLostAlertEntity? _resolvedLostAlert;
   PetFoundAlertEntity? _resolvedFoundAlert;
+  PetAdoptionAlertEntity? _resolvedAdoptionAlert;
   List<String> _galleryUrls = [];
   int _currentPhotoIndex = 0;
   final PageController _pageController = PageController();
@@ -49,6 +53,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
     super.initState();
     _resolvedLostAlert = widget.lostAlert;
     _resolvedFoundAlert = widget.foundAlert;
+    _resolvedAdoptionAlert = widget.adoptionAlert;
 
     if (_resolvedLostAlert != null) {
       _galleryUrls = List<String>.from(_resolvedLostAlert!.effectiveImageUrls);
@@ -56,6 +61,10 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
     } else if (_resolvedFoundAlert != null) {
       _galleryUrls = List<String>.from(_resolvedFoundAlert!.effectiveImageUrls);
       _loadExtraPhotos(_resolvedFoundAlert!.id);
+    } else if (_resolvedAdoptionAlert != null) {
+      if (_resolvedAdoptionAlert!.imageUrl.isNotEmpty) {
+        _galleryUrls = [_resolvedAdoptionAlert!.imageUrl];
+      }
     } else if (widget.lostAlertId != null && widget.lostAlertId!.isNotEmpty) {
       _loadLostAlertById(widget.lostAlertId!);
     } else if (widget.foundAlertId != null && widget.foundAlertId!.isNotEmpty) {
@@ -252,19 +261,22 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
   Widget _buildContent(BuildContext context, ProfileEntity? profile) {
     final lost = _resolvedLostAlert;
     final found = _resolvedFoundAlert;
+    final adoption = _resolvedAdoptionAlert;
 
     final String rawContact = lost != null
         ? lost.contact.trim()
-        : (found?.contact?.trim() ?? '');
+        : (found != null && found.contact != null && found.contact!.trim().isNotEmpty
+            ? found.contact!.trim()
+            : (profile?.phone.trim() ?? ''));
     final phoneDigits = _cleanDigitsWithoutCountryCode(rawContact);
     final formattedPhone = _formatPhoneDisplay(rawContact);
 
-    final PetType? petType = lost?.petType ?? found?.petType;
+    final PetType? petType = lost?.petType ?? found?.petType ?? adoption?.species;
     final String? breed = lost?.breed ?? found?.breed;
     final String? age = lost?.age ?? found?.apparentAge;
-    final String description = lost?.description ?? found?.description ?? '';
-    final String location = lost?.lastLocation ?? found?.foundLocation ?? '';
-    final DateTime? eventDate = lost?.lostDate ?? found?.foundDate;
+    final String description = lost?.description ?? found?.description ?? adoption?.characteristics ?? '';
+    final String location = lost?.lastLocation ?? found?.foundLocation ?? adoption?.region ?? '';
+    final DateTime? eventDate = lost?.lostDate ?? found?.foundDate ?? adoption?.createdAt;
 
     final String title = lost != null
         ? lost.petName
@@ -276,7 +288,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                           : found.petType == PetType.cat
                           ? 'Gato Encontrado'
                           : 'Pet Encontrado'))
-              : '');
+              : (adoption != null ? adoption.name : ''));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -285,144 +297,156 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
         children: [
           // --- 1. Galeria de Fotos do Pet (até 3) ---
           if (_galleryUrls.isNotEmpty) ...[
-            Container(
-              height: 280,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                children: [
-                  PageView.builder(
-                    controller: _pageController,
-                    itemCount: _galleryUrls.length,
-                    onPageChanged: (idx) {
-                      setState(() => _currentPhotoIndex = idx);
-                    },
-                    itemBuilder: (context, index) {
-                      return Image.network(
-                        _galleryUrls[index],
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                size: 56,
-                                color: AppColors.textSecondary,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(10),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    PageView.builder(
+                      controller: _pageController,
+                      itemCount: _galleryUrls.length,
+                      onPageChanged: (idx) {
+                        setState(() => _currentPhotoIndex = idx);
+                      },
+                      itemBuilder: (context, index) {
+                        return Image.network(
+                          _galleryUrls[index],
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 56,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
-                            ),
-                      );
-                    },
-                  ),
-                  if (_galleryUrls.length > 1)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withAlpha(160),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${_currentPhotoIndex + 1}/${_galleryUrls.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
-                  if (_galleryUrls.length > 1 && _currentPhotoIndex > 0)
-                    Positioned(
-                      left: 8,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.black45,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(
-                              Icons.chevron_left,
+                    if (_galleryUrls.length > 1)
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withAlpha(160),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '${_currentPhotoIndex + 1}/${_galleryUrls.length}',
+                            style: const TextStyle(
                               color: Colors.white,
-                              size: 22,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
                             ),
-                            onPressed: () {
-                              _pageController.previousPage(
-                                duration: const Duration(milliseconds: 250),
-                                curve: Curves.easeInOut,
-                              );
-                            },
                           ),
                         ),
                       ),
-                    ),
-                  if (_galleryUrls.length > 1 &&
-                      _currentPhotoIndex < _galleryUrls.length - 1)
-                    Positioned(
-                      right: 8,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.black45,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(
-                              Icons.chevron_right,
-                              color: Colors.white,
-                              size: 22,
+                    if (_galleryUrls.length > 1 && _currentPhotoIndex > 0)
+                      Positioned(
+                        left: 8,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Colors.black45,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(
+                                Icons.chevron_left,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                              onPressed: () {
+                                _pageController.previousPage(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
                             ),
-                            onPressed: () {
-                              _pageController.nextPage(
-                                duration: const Duration(milliseconds: 250),
-                                curve: Curves.easeInOut,
-                              );
-                            },
                           ),
                         ),
                       ),
-                    ),
-                  if (_galleryUrls.length > 1)
-                    Positioned(
-                      bottom: 12,
-                      left: 0,
-                      right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(_galleryUrls.length, (i) {
-                          final active = i == _currentPhotoIndex;
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            width: active ? 20 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? AppColors.primary
-                                  : Colors.white.withAlpha(200),
-                              borderRadius: BorderRadius.circular(8),
+                    if (_galleryUrls.length > 1 &&
+                        _currentPhotoIndex < _galleryUrls.length - 1)
+                      Positioned(
+                        right: 8,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Colors.black45,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(
+                                Icons.chevron_right,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                              onPressed: () {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
                             ),
-                          );
-                        }),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
+                    if (_galleryUrls.length > 1)
+                      Positioned(
+                        bottom: 12,
+                        left: 0,
+                        right: 0,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(_galleryUrls.length, (i) {
+                            final active = i == _currentPhotoIndex;
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              width: active ? 20 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? AppColors.primary
+                                    : Colors.white.withAlpha(200),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),
           ],
 
           // --- 2. Informações Detalhadas do Pet ---
-          if (lost != null || found != null) ...[
+          if (lost != null || found != null || adoption != null) ...[
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
@@ -460,6 +484,30 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                             ),
                           ),
                         ),
+                      if (adoption != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: adoption.isVaccinated
+                                ? AppColors.success.withAlpha(25)
+                                : AppColors.surfaceLight,
+                            border: Border.all(color: AppColors.border),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            adoption.isVaccinated ? 'Vacinado' : 'Sem vacina',
+                            style: AppTextStyles.label(
+                              color: adoption.isVaccinated
+                                  ? AppColors.success
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   if ((breed != null && breed.isNotEmpty) ||
@@ -486,7 +534,10 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                     const SizedBox(height: 14),
                     const Divider(color: AppColors.border, height: 1),
                     const SizedBox(height: 14),
-                    Text('Sobre o pet', style: AppTextStyles.sectionHeader()),
+                    Text(
+                      adoption != null ? 'Características' : 'Sobre o pet',
+                      style: AppTextStyles.sectionHeader(),
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       description,
@@ -504,7 +555,7 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                         size: 20,
                         color: lost != null
                             ? AppColors.error
-                            : AppColors.success,
+                            : (found != null ? AppColors.success : AppColors.primary),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -514,7 +565,9 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                             Text(
                               lost != null
                                   ? 'Último local visto'
-                                  : 'Local onde foi encontrado',
+                                  : (found != null
+                                      ? 'Local onde foi encontrado'
+                                      : 'Região / Cidade'),
                               style: AppTextStyles.label(
                                 color: AppColors.textSecondary,
                               ),
@@ -544,7 +597,9 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                         Text(
                           lost != null
                               ? 'Desapareceu em ${_formatDate(eventDate)}'
-                              : 'Encontrado em ${_formatDate(eventDate)}',
+                              : (found != null
+                                  ? 'Encontrado em ${_formatDate(eventDate)}'
+                                  : 'Publicado em ${_formatDate(eventDate)}'),
                           style: AppTextStyles.body(
                             color: AppColors.textPrimary,
                           ),
@@ -655,7 +710,9 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
                     onPressed: () {
                       final msg = lost != null
                           ? 'Olá! Vi o alerta de ${lost.petName} no Orelinhas e gostaria de ajudar.'
-                          : 'Olá! Vi o registro do pet encontrado no Orelinhas e acredito que seja meu.';
+                          : (found != null
+                              ? 'Olá! Vi o registro do pet encontrado no Orelinhas e acredito que seja meu.'
+                              : 'Olá! Vi o anúncio de adoção de ${adoption?.name ?? "seu pet"} no Orelinhas e tenho interesse!');
                       final text = Uri.encodeComponent(msg);
                       _launchUri(
                         Uri.parse('https://wa.me/55$phoneDigits?text=$text'),

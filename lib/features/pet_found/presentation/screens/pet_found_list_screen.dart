@@ -405,8 +405,12 @@ class _PetFoundListScreenState extends ConsumerState<PetFoundListScreen> {
         onPressed: () => context.push(AppRoutes.petFoundCreate),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: Text('Novo Registro', style: AppTextStyles.button()),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+        icon: const Icon(Icons.add_rounded),
+        label: Text(
+          'Novo Registro',
+          style: AppTextStyles.button(color: Colors.white),
+        ),
       ),
     );
   }
