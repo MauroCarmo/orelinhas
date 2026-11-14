@@ -188,16 +188,17 @@ class SupabasePetRecognitionService {
     return embeddings;
   }
 
-  /// Recupera as URLs das imagens cadastradas para um pet (até 3) na ordem de inserção.
+  /// Recupera as URLs das imagens cadastradas para um pet (até 3).
   Future<List<String>> getPetImageUrls(String petId) async {
+    final urls = <String>[];
+
+    // 1. Busca na tabela pet_images (sem depender da coluna created_at)
     try {
       final data = await _supabase
           .from('pet_images')
           .select('image_url')
-          .eq('pet_id', petId)
-          .order('created_at', ascending: true);
+          .eq('pet_id', petId);
 
-      final urls = <String>[];
       for (final row in data) {
         final url = row['image_url'] as String?;
         if (url != null &&
@@ -206,15 +207,36 @@ class SupabasePetRecognitionService {
           urls.add(url.trim());
         }
       }
-      return urls.take(3).toList();
     } catch (e, st) {
       _logger.w(
-        'Erro ao consultar URLs de imagens do pet no Supabase.',
+        'Erro ao consultar URLs em pet_images no Supabase.',
         error: e,
         stackTrace: st,
       );
-      return [];
     }
+
+    // 2. Fallback/complemento via pet_visual_profiles
+    if (urls.length < 3) {
+      try {
+        final profile = await getVisualProfile(petId);
+        if (profile != null) {
+          for (final img in profile.images) {
+            final trimmed = img.imageUrl.trim();
+            if (trimmed.isNotEmpty && !urls.contains(trimmed)) {
+              urls.add(trimmed);
+            }
+          }
+        }
+      } catch (e, st) {
+        _logger.w(
+          'Erro ao consultar URLs em pet_visual_profiles no Supabase.',
+          error: e,
+          stackTrace: st,
+        );
+      }
+    }
+
+    return urls.take(3).toList();
   }
 
   /// Sincroniza a tabela pet_images com as URLs ativas do anúncio:
