@@ -18,6 +18,7 @@ import '../../features/pet_found/presentation/screens/create_pet_found_screen.da
 import '../../features/pet_found/presentation/screens/pet_found_map_screen.dart';
 import '../../features/pet_adoption/presentation/screens/pet_adoption_list_screen.dart';
 import '../../features/pet_adoption/presentation/screens/create_pet_adoption_screen.dart';
+import '../../features/home/presentation/screens/report_abuse_screen.dart';
 import '../../features/notification/presentation/screens/notification_list_screen.dart';
 import '../../features/pet_recognition/presentation/screens/pet_match_results_screen.dart';
 import '../../features/pet_recognition/presentation/screens/pet_match_detail_screen.dart';
@@ -199,6 +200,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.notifications,
         builder: (context, state) => const NotificationListScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.reportAbuse,
+        builder: (context, state) => const ReportAbuseScreen(),
       ),
       GoRoute(
         path: '/pet-matches/:id',

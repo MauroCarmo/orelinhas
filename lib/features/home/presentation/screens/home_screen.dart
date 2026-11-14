@@ -54,6 +54,10 @@ class HomeScreen extends ConsumerWidget {
                 style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
               ),
               const SizedBox(height: 14),
+              _ReportAbuseBanner(
+                onTap: () => context.push(AppRoutes.reportAbuse),
+              ),
+              const SizedBox(height: 14),
               const _HeroCard(),
               const SizedBox(height: 18),
               const _QuickActions(),
@@ -348,6 +352,83 @@ class _RoundIconButton extends StatelessWidget {
           child: SizedBox.square(
             dimension: 42,
             child: Icon(icon, color: AppColors.primary, size: 22),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportAbuseBanner extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ReportAbuseBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surfaceLight,
+      borderRadius: BorderRadius.circular(18),
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFF2D1CC)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFC75A47).withAlpha(15),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC75A47),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.shield_outlined,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Denunciar Maus-Tratos',
+                      style: AppTextStyles.heading3(color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Relate situações de risco ou abandono de forma segura e anônima.',
+                      style: AppTextStyles.bodySmall(
+                        color: AppColors.textSecondary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textSecondary,
+                size: 24,
+              ),
+            ],
           ),
         ),
       ),

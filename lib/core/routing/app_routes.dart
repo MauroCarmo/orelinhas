@@ -55,4 +55,7 @@ class AppRoutes {
 
   // Rota para central de notificações
   static const String notifications = '/notifications';
+
+  // Rota para canais de denúncia de maus-tratos
+  static const String reportAbuse = '/report-abuse';
 }
