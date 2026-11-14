@@ -50,6 +50,7 @@ ai_backend/yolov8n.pt
 
 # Environment variables
 .env
+.env.local
 
 # Python generated files
 __pycache__/
