@@ -297,137 +297,148 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
         children: [
           // --- 1. Galeria de Fotos do Pet (até 3) ---
           if (_galleryUrls.isNotEmpty) ...[
-            Container(
-              height: 280,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                children: [
-                  PageView.builder(
-                    controller: _pageController,
-                    itemCount: _galleryUrls.length,
-                    onPageChanged: (idx) {
-                      setState(() => _currentPhotoIndex = idx);
-                    },
-                    itemBuilder: (context, index) {
-                      return Image.network(
-                        _galleryUrls[index],
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                size: 56,
-                                color: AppColors.textSecondary,
+            AspectRatio(
+              aspectRatio: 16 / 10,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(10),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    PageView.builder(
+                      controller: _pageController,
+                      itemCount: _galleryUrls.length,
+                      onPageChanged: (idx) {
+                        setState(() => _currentPhotoIndex = idx);
+                      },
+                      itemBuilder: (context, index) {
+                        return Image.network(
+                          _galleryUrls[index],
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 56,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
-                            ),
-                      );
-                    },
-                  ),
-                  if (_galleryUrls.length > 1)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withAlpha(160),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${_currentPhotoIndex + 1}/${_galleryUrls.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
-                  if (_galleryUrls.length > 1 && _currentPhotoIndex > 0)
-                    Positioned(
-                      left: 8,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.black45,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(
-                              Icons.chevron_left,
+                    if (_galleryUrls.length > 1)
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withAlpha(160),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '${_currentPhotoIndex + 1}/${_galleryUrls.length}',
+                            style: const TextStyle(
                               color: Colors.white,
-                              size: 22,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
                             ),
-                            onPressed: () {
-                              _pageController.previousPage(
-                                duration: const Duration(milliseconds: 250),
-                                curve: Curves.easeInOut,
-                              );
-                            },
                           ),
                         ),
                       ),
-                    ),
-                  if (_galleryUrls.length > 1 &&
-                      _currentPhotoIndex < _galleryUrls.length - 1)
-                    Positioned(
-                      right: 8,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.black45,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(
-                              Icons.chevron_right,
-                              color: Colors.white,
-                              size: 22,
+                    if (_galleryUrls.length > 1 && _currentPhotoIndex > 0)
+                      Positioned(
+                        left: 8,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Colors.black45,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(
+                                Icons.chevron_left,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                              onPressed: () {
+                                _pageController.previousPage(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
                             ),
-                            onPressed: () {
-                              _pageController.nextPage(
-                                duration: const Duration(milliseconds: 250),
-                                curve: Curves.easeInOut,
-                              );
-                            },
                           ),
                         ),
                       ),
-                    ),
-                  if (_galleryUrls.length > 1)
-                    Positioned(
-                      bottom: 12,
-                      left: 0,
-                      right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(_galleryUrls.length, (i) {
-                          final active = i == _currentPhotoIndex;
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            width: active ? 20 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? AppColors.primary
-                                  : Colors.white.withAlpha(200),
-                              borderRadius: BorderRadius.circular(8),
+                    if (_galleryUrls.length > 1 &&
+                        _currentPhotoIndex < _galleryUrls.length - 1)
+                      Positioned(
+                        right: 8,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Colors.black45,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(
+                                Icons.chevron_right,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                              onPressed: () {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
                             ),
-                          );
-                        }),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
+                    if (_galleryUrls.length > 1)
+                      Positioned(
+                        bottom: 12,
+                        left: 0,
+                        right: 0,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(_galleryUrls.length, (i) {
+                            final active = i == _currentPhotoIndex;
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              width: active ? 20 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? AppColors.primary
+                                    : Colors.white.withAlpha(200),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),
