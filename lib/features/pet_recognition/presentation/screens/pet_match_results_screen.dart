@@ -194,7 +194,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _getSortedMatches(matchState.matches).length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 14),
+                      separatorBuilder: (_, __) => const SizedBox(height: 14),
                       itemBuilder: (context, index) {
                         final candidate = _getSortedMatches(
                           matchState.matches,

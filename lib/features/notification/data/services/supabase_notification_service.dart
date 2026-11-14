@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/logger/app_logger.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../domain/models/notification_entity.dart';
-import '../../domain/models/notification_type.dart';
 
 final supabaseNotificationServiceProvider =
     Provider<SupabaseNotificationService>((ref) {
@@ -16,12 +15,9 @@ class SupabaseNotificationService {
   final SupabaseClient _supabase;
   final _logger = AppLogger.category('SupabaseNotificationService');
 
-  // Cache em memória para desenvolvimento/fallback/testes
-  final List<NotificationEntity> _inMemoryNotifications = [];
-
   SupabaseNotificationService(this._supabase);
 
-  /// Recupera as notificações do usuário ordenadas da mais recente para a mais antiga.
+  /// Recupera as notificações do usuário ordenadas da mais recente para a mais antiga diretamente do Supabase.
   Future<List<NotificationEntity>> getNotifications(
     String userId, {
     int limit = 50,
@@ -47,30 +43,21 @@ class SupabaseNotificationService {
 
       return list;
     } catch (e, st) {
-      _logger.w(
-        'Falha ao carregar notificações do Supabase (tabela em migração). Usando cache local.',
+      _logger.e(
+        'Falha ao carregar notificações do Supabase.',
         error: e,
         stackTrace: st,
       );
-      return _inMemoryNotifications.where((n) => n.userId == userId).toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return [];
     }
   }
 
-  /// Marca uma notificação específica como lida.
+  /// Marca uma notificação específica como lida no Supabase.
   Future<void> markAsRead(String userId, String notificationId) async {
-    _logger.i('Marcando notificação como lida.', context: {
+    _logger.i('Marcando notificação como lida no Supabase.', context: {
       'userId': userId,
       'notificationId': notificationId,
     });
-
-    // Atualiza cache em memória
-    final index = _inMemoryNotifications
-        .indexWhere((n) => n.id == notificationId && n.userId == userId);
-    if (index != -1) {
-      _inMemoryNotifications[index] =
-          _inMemoryNotifications[index].copyWith(isRead: true);
-    }
 
     try {
       await _supabase
@@ -83,18 +70,11 @@ class SupabaseNotificationService {
     }
   }
 
-  /// Marca todas as notificações do usuário como lidas.
+  /// Marca todas as notificações do usuário como lidas no Supabase.
   Future<void> markAllAsRead(String userId) async {
-    _logger.i('Marcando todas as notificações como lidas.', context: {
+    _logger.i('Marcando todas as notificações como lidas no Supabase.', context: {
       'userId': userId,
     });
-
-    for (int i = 0; i < _inMemoryNotifications.length; i++) {
-      if (_inMemoryNotifications[i].userId == userId) {
-        _inMemoryNotifications[i] =
-            _inMemoryNotifications[i].copyWith(isRead: true);
-      }
-    }
 
     try {
       await _supabase
@@ -107,7 +87,7 @@ class SupabaseNotificationService {
     }
   }
 
-  /// Registra ou atualiza o token de push do usuário.
+  /// Registra ou atualiza o token de push do usuário no Supabase.
   Future<void> updatePushToken(
     String userId,
     String token, {
@@ -133,25 +113,8 @@ class SupabaseNotificationService {
     }
   }
 
-  /// Método auxiliar para criar notificação (usado em simulações/testes locais)
+  /// Registra notificação diretamente no Supabase.
   Future<void> createNotification(NotificationEntity notification) async {
-    // 1. Atualização com deduplicação no cache em memória
-    final existingIndex = _inMemoryNotifications.indexWhere(
-      (n) =>
-          n.id == notification.id ||
-          (n.type == NotificationType.matchFound &&
-              notification.type == NotificationType.matchFound &&
-              n.userId == notification.userId &&
-              n.relatedPetId == notification.relatedPetId &&
-              n.relatedMatchId == notification.relatedMatchId),
-    );
-
-    if (existingIndex != -1) {
-      _logger.i('Notificação de match já existente em cache. Ignorando duplicata.');
-      return;
-    }
-
-    _inMemoryNotifications.add(notification);
     try {
       await _supabase.from('notifications').upsert(
             notification.toJson(),

@@ -181,7 +181,7 @@ class NotificationListScreen extends ConsumerWidget {
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
               itemCount: notifications.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final notif = notifications[index];
                 return _buildNotificationCard(context, ref, notif);

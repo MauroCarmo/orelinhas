@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,19 +45,16 @@ class AiVisionService {
   final String? _apiEndpoint;
   final String? _authToken;
   final Duration _timeout;
-  final bool _allowSimulationForTesting;
 
   AiVisionService({
     http.Client? httpClient,
     String? apiEndpoint,
     String? authToken,
     Duration timeout = const Duration(seconds: 15),
-    bool allowSimulationForTesting = false,
   })  : _httpClient = httpClient ?? http.Client(),
         _apiEndpoint = apiEndpoint,
         _authToken = authToken,
-        _timeout = timeout,
-        _allowSimulationForTesting = allowSimulationForTesting;
+        _timeout = timeout;
 
   /// Analisa uma imagem de pet através do pipeline:
   /// 1. Verificação de elegibilidade da espécie (somente cães e gatos).
@@ -102,20 +98,9 @@ class AiVisionService {
         );
       }
 
-      // 3. Simulação permitida EXCLUSIVAMENTE em testes unitários isolados
-      if (_allowSimulationForTesting) {
-        _logger.w('Executando simulador local de teste isolado (allowSimulationForTesting=true).');
-        return await _simulateRobustAiPipeline(
-          imageUrl: imageUrl,
-          imageBytes: imageBytes,
-          petType: petType,
-          selectedBox: userSelectedBox,
-        );
-      }
-
-      // 4. Fluxo normal: quando AI_VISION_ENDPOINT estiver ausente ou vazio,
-      // retorna erro explícito de configuração sem gerar dados simulados.
-      _logger.e('AI_VISION_ENDPOINT não configurado no .env. Simulação bloqueada para produção.');
+      // 3. Quando AI_VISION_ENDPOINT estiver ausente ou vazio,
+      // retorna erro explícito de configuração.
+      _logger.e('AI_VISION_ENDPOINT não configurado no .env.');
       return const VisionAnalysisResult(
         status: AnalysisStatus.error,
         errorMessage: 'Serviço de reconhecimento de IA não configurado (AI_VISION_ENDPOINT ausente).',
@@ -211,121 +196,5 @@ class AiVisionService {
         errorMessage: 'Serviço de IA retornou status ${response.statusCode}',
       );
     }
-  }
-
-  /// Pipeline simulado e robusto que reproduz o comportamento real do YOLOv8n + SigLIP:
-  /// - Detecta cão ou gato com bounding boxes realistas
-  /// - Gera embedding de 768 dimensões com normalização L2
-  /// - Respeita imagens corrompidas / não detectadas
-  Future<VisionAnalysisResult> _simulateRobustAiPipeline({
-    required String imageUrl,
-    required Uint8List? imageBytes,
-    required PetType petType,
-    required BoundingBoxEntity? selectedBox,
-  }) async {
-    // Simula tempo de processamento assíncrono não-bloqueante (300ms a 600ms)
-    await Future.delayed(const Duration(milliseconds: 350));
-
-    final lowerUrl = imageUrl.toLowerCase();
-
-    // Simulação de cenários específicos baseados na URL/nome para permitir testes controlados
-    if (lowerUrl.contains('not_detected') || lowerUrl.contains('no_pet') || lowerUrl.contains('blurry_fail')) {
-      return const VisionAnalysisResult(
-        status: AnalysisStatus.notDetected,
-        detections: [],
-        errorMessage: 'Nenhum animal identificado na foto com nitidez suficiente.',
-      );
-    }
-
-    if (lowerUrl.contains('ai_error') || lowerUrl.contains('crash') || lowerUrl.contains('siglip_fail')) {
-      return const VisionAnalysisResult(
-        status: AnalysisStatus.error,
-        errorMessage: 'Erro interno no modelo de identificação visual.',
-      );
-    }
-
-    // Cenário com múltiplos animais detectados pelo YOLOv8n
-    if (lowerUrl.contains('multi_pet') || lowerUrl.contains('multiple')) {
-      final d1 = BoundingBoxEntity(
-        xMin: 0.1,
-        yMin: 0.2,
-        xMax: 0.45,
-        yMax: 0.85,
-        confidence: 0.92,
-        label: petType.name,
-      );
-      final d2 = BoundingBoxEntity(
-        xMin: 0.55,
-        yMin: 0.25,
-        xMax: 0.9,
-        yMax: 0.88,
-        confidence: 0.88,
-        label: petType.name,
-      );
-      final detections = [d1, d2];
-      final targetBox = selectedBox ?? d1;
-
-      final embedding = _generateDeterministicSiglipEmbedding(
-        seed: '$imageUrl:${targetBox.xMin}:${targetBox.yMin}',
-        petType: petType,
-      );
-
-      return VisionAnalysisResult(
-        status: AnalysisStatus.processed,
-        detections: detections,
-        selectedDetection: targetBox,
-        embedding768: embedding,
-      );
-    }
-
-    // Detecção padrão bem-sucedida do YOLOv8n
-    final defaultBox = selectedBox ??
-        BoundingBoxEntity(
-          xMin: 0.15,
-          yMin: 0.12,
-          xMax: 0.85,
-          yMax: 0.88,
-          confidence: 0.94,
-          label: petType.name,
-        );
-
-    // Geração de embedding SigLIP (768 dimensões)
-    final embedding = _generateDeterministicSiglipEmbedding(
-      seed: '$imageUrl:${petType.name}',
-      petType: petType,
-    );
-
-    return VisionAnalysisResult(
-      status: AnalysisStatus.processed,
-      detections: [defaultBox],
-      selectedDetection: defaultBox,
-      embedding768: embedding,
-    );
-  }
-
-  /// Gera um vetor de 768 dimensões determinístico e unitário (L2 normalized) a partir de uma seed.
-  /// Em ambiente de simulação/local, animais da mesma espécie compartilham um cluster base
-  /// com pequenas variações individuais, produzindo similaridades realistas (75% a 92%).
-  List<double> _generateDeterministicSiglipEmbedding({
-    required String seed,
-    required PetType petType,
-  }) {
-    // 1. Vetor base da espécie (cão vs gato têm clusters distintos no SigLIP)
-    final speciesBaseSeed = petType == PetType.dog ? 777001 : 888002;
-    final speciesRandom = math.Random(speciesBaseSeed);
-    final speciesVector = List<double>.generate(768, (_) => (speciesRandom.nextDouble() * 2.0) - 1.0);
-
-    // 2. Variação determinística da imagem específica
-    final int hash = seed.hashCode;
-    final imageRandom = math.Random(hash);
-    final variationVector = List<double>.generate(768, (_) => (imageRandom.nextDouble() * 2.0) - 1.0);
-
-    // 3. Combina o arquétipo da espécie com a variação individual
-    final combined = List<double>.generate(
-      768,
-      (i) => speciesVector[i] * 0.82 + variationVector[i] * 0.18,
-    );
-
-    return VectorMath.l2Normalize(combined);
   }
 }
