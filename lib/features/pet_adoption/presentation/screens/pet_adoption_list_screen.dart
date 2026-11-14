@@ -331,6 +331,7 @@ class _PetAdoptionListScreenState extends ConsumerState<PetAdoptionListScreen> {
                           } else {
                             context.push(
                               AppRoutes.publicProfile(adoption.userId),
+                              extra: adoption,
                             );
                           }
                         },

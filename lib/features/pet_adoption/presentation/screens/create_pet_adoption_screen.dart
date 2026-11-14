@@ -4,10 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/exceptions/app_exceptions.dart';
+import '../../../../core/formatters/phone_input_formatter.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
+import '../../../user/data/profile_repository.dart';
+import '../../../user/domain/profile_entity.dart';
+import '../../../user/presentation/controllers/profile_controller.dart';
 import '../../../pet_lost/domain/pet_lost_entity.dart' show PetType;
 import '../../../pet_lost/presentation/widgets/pet_widgets.dart';
 import '../controllers/pet_adoption_controller.dart';
@@ -30,6 +34,7 @@ class _CreatePetAdoptionScreenState
   late TextEditingController _nameController;
   late TextEditingController _characteristicsController;
   late TextEditingController _regionController;
+  late TextEditingController _contactController;
 
   PetType _selectedSpecies = PetType.dog;
   bool _isVaccinated = false;
@@ -46,6 +51,7 @@ class _CreatePetAdoptionScreenState
     _nameController = TextEditingController();
     _characteristicsController = TextEditingController();
     _regionController = TextEditingController();
+    _contactController = TextEditingController();
   }
 
   @override
@@ -53,6 +59,7 @@ class _CreatePetAdoptionScreenState
     _nameController.dispose();
     _characteristicsController.dispose();
     _regionController.dispose();
+    _contactController.dispose();
     super.dispose();
   }
 
@@ -64,6 +71,10 @@ class _CreatePetAdoptionScreenState
       _regionController.text = adoption.region;
       _isVaccinated = adoption.isVaccinated;
       _existingImageUrl = adoption.imageUrl;
+      final currentProfile = ref.read(profileControllerProvider).value;
+      if (currentProfile != null && currentProfile.phone.isNotEmpty) {
+        _contactController.text = currentProfile.phone;
+      }
       _controllersInitialized = true;
     }
   }
@@ -184,6 +195,16 @@ class _CreatePetAdoptionScreenState
       return;
     }
 
+    // Validação do telefone de contato (obrigatório para adoção)
+    final contactText = _contactController.text.trim();
+    final digits = contactText.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 10 || digits.length > 11) {
+      _showErrorDialog(context, [
+        'O telefone de contato é obrigatório e deve ter DDD + número válido (10 ou 11 dígitos).'
+      ]);
+      return;
+    }
+
     final imageUrl = await _uploadImageIfNeeded();
     if (!mounted) return;
     if (imageUrl == null) {
@@ -205,6 +226,29 @@ class _CreatePetAdoptionScreenState
     if (errors.isNotEmpty) {
       _showErrorDialog(context, errors);
       return;
+    }
+
+    // Sincroniza o telefone no perfil do usuário se necessário
+    try {
+      final profileState = ref.read(profileControllerProvider).value;
+      if (profileState != null) {
+        final currentPhoneDigits = profileState.phone.replaceAll(RegExp(r'\D'), '');
+        if (currentPhoneDigits != digits) {
+          final updated = ProfileEntity(
+            id: profileState.id,
+            name: profileState.name,
+            email: profileState.email,
+            phone: digits,
+            location: profileState.location,
+            address: profileState.address,
+            avatarUrl: profileState.avatarUrl,
+          );
+          await ref.read(profileRepositoryProvider).updateProfile(updated);
+          ref.invalidate(profileControllerProvider);
+        }
+      }
+    } catch (_) {
+      // Falha secundária não impede o cadastro de adoção
     }
 
     final controller = ref.read(petAdoptionControllerProvider.notifier);
@@ -258,6 +302,12 @@ class _CreatePetAdoptionScreenState
         },
         orElse: () {},
       );
+    } else if (!_controllersInitialized) {
+      final currentProfile = ref.watch(profileControllerProvider).value;
+      if (currentProfile != null && currentProfile.phone.isNotEmpty) {
+        _contactController.text = currentProfile.phone;
+        _controllersInitialized = true;
+      }
     }
 
     final isLoading = controllerState.isLoading;
@@ -326,6 +376,20 @@ class _CreatePetAdoptionScreenState
                         hintText: 'Ex.: São Paulo, Vila Mariana',
                         prefixIcon: const Icon(Icons.place_outlined, size: 20),
                       ),
+                      enabled: !isLoading,
+                    ),
+                    const SizedBox(height: 18),
+                    const FieldLabel('Telefone de contato *'),
+                    TextFormField(
+                      controller: _contactController,
+                      decoration: AppInputDecoration.defaultDecoration(
+                        labelText: '',
+                        hintText: '(11) 99999-9999',
+                        prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+                        helperText: 'Com quem os interessados em adotar vão conversar',
+                      ),
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [PhoneInputFormatter()],
                       enabled: !isLoading,
                     ),
                     const SizedBox(height: 18),

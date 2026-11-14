@@ -22,6 +22,7 @@ import '../../features/notification/presentation/screens/notification_list_scree
 import '../../features/pet_recognition/presentation/screens/pet_match_results_screen.dart';
 import '../../features/pet_recognition/presentation/screens/pet_match_detail_screen.dart';
 import '../../features/pet_lost/domain/pet_lost_entity.dart';
+import '../../features/pet_adoption/domain/pet_adoption_entity.dart';
 import '../../features/pet_found/domain/pet_found_entity.dart';
 import '../../features/welcome/presentation/screens/welcome_screen.dart';
 import '../widgets/app_shell.dart';
@@ -170,6 +171,9 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 ? state.extra as PetFoundAlertEntity
                 : null,
             foundAlertId: foundId,
+            adoptionAlert: state.extra is PetAdoptionAlertEntity
+                ? state.extra as PetAdoptionAlertEntity
+                : null,
           );
         },
       ),
