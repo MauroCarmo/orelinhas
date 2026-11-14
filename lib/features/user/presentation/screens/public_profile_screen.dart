@@ -297,9 +297,10 @@ class _PublicProfileScreenState extends ConsumerState<PublicProfileScreen> {
         children: [
           // --- 1. Galeria de Fotos do Pet (até 3) ---
           if (_galleryUrls.isNotEmpty) ...[
-            AspectRatio(
-              aspectRatio: 16 / 10,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
               child: Container(
+                width: double.infinity,
                 decoration: BoxDecoration(
                   color: AppColors.surfaceLight,
                   borderRadius: BorderRadius.circular(24),
