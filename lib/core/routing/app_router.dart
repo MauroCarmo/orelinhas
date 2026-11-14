@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,45 +29,74 @@ import '../../features/welcome/presentation/screens/welcome_screen.dart';
 import '../widgets/app_shell.dart';
 import 'app_routes.dart';
 
+// Notifier auxiliar para o GoRouter reavaliar redirects sem recriar a instância
+class _AuthRouterRefreshNotifier extends ChangeNotifier {
+  late final StreamSubscription<AuthState> _subscription;
+  AuthChangeEvent? lastEvent;
+
+  _AuthRouterRefreshNotifier(Stream<AuthState> stream) {
+    _subscription = stream.listen((authState) {
+      lastEvent = authState.event;
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
 final goRouterProvider = Provider<GoRouter>((ref) {
-  // Escuta as mudanças no estado de autenticação (logado ou não)
-  final authState = ref.watch(authStateProvider);
+  final authStream = Supabase.instance.client.auth.onAuthStateChange;
+  final refreshNotifier = _AuthRouterRefreshNotifier(authStream);
+
+  ref.onDispose(() {
+    refreshNotifier.dispose();
+  });
 
   return GoRouter(
     initialLocation: AppRoutes.welcome,
+    refreshListenable: refreshNotifier,
     redirect: (context, state) {
-      // Pega o status atual da sessão
-      final authStateVal = authState.value;
-      final isAuthenticated = authStateVal?.session != null;
-      final authEvent = authStateVal?.event;
+      final session = Supabase.instance.client.auth.currentSession;
+      final isAuthenticated = session != null;
+      final authEvent = refreshNotifier.lastEvent;
+      final currentPath = state.matchedLocation;
 
-      // Quando o deep link de recuperação de senha for clicado
+      // 1. Quando o link de recuperação de senha for clicado (Web ou Mobile)
       if (authEvent == AuthChangeEvent.passwordRecovery &&
-          state.matchedLocation != AppRoutes.updatePassword) {
+          currentPath != AppRoutes.updatePassword) {
         return AppRoutes.updatePassword;
       }
 
-      // Rotas públicas (que usuários não logados podem acessar)
-      final isLoggingIn =
-          state.matchedLocation == AppRoutes.welcome ||
-          state.matchedLocation == AppRoutes.login ||
-          state.matchedLocation == AppRoutes.register ||
-          state.matchedLocation == AppRoutes.forgotPassword;
+      // 2. Evita que o deep link mobile (/login-callback) caia em erro de rota não encontrada
+      // enquanto o Supabase ainda está trocando o código pela sessão
+      if (currentPath == '/login-callback') {
+        return isAuthenticated ? AppRoutes.home : AppRoutes.welcome;
+      }
 
-      // Redirecionamento (Auth Guard)
-      if (!isAuthenticated &&
-          !isLoggingIn &&
-          state.matchedLocation != AppRoutes.updatePassword) {
-        // Bloqueia qualquer rota privada se não estiver logado
+      // 3. Rotas públicas (que usuários não logados podem acessar)
+      final isPublicRoute =
+          currentPath == AppRoutes.welcome ||
+          currentPath == AppRoutes.login ||
+          currentPath == AppRoutes.register ||
+          currentPath == AppRoutes.forgotPassword ||
+          currentPath == AppRoutes.updatePassword;
+
+      // 4. Auth Guard: Bloqueia rotas privadas se não estiver logado
+      if (!isAuthenticated && !isPublicRoute) {
         return AppRoutes.welcome;
       }
 
-      if (isAuthenticated && isLoggingIn) {
-        // Redireciona para a home se estiver logado e tentar acessar login/registro
+      // 5. Se já estiver logado e tentar acessar telas de entrada (exceto updatePassword), vai para Home
+      if (isAuthenticated &&
+          isPublicRoute &&
+          currentPath != AppRoutes.updatePassword) {
         return AppRoutes.home;
       }
 
-      // Permite a navegação normal
       return null;
     },
     routes: [
@@ -88,6 +119,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.updatePassword,
         builder: (context, state) => const UpdatePasswordScreen(),
+      ),
+      // Rota de fallback caso o deep link mobile caia aqui antes do evento disparar
+      GoRoute(
+        path: '/login-callback',
+        builder: (context, state) => const WelcomeScreen(),
       ),
 
       // Áreas principais com barra de navegação inferior

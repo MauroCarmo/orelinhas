@@ -1,8 +1,11 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/exceptions/error_mapper.dart';
 import '../../../core/logger/app_logger.dart';
+import '../../../core/routing/app_routes.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   final supabase = ref.read(supabaseClientProvider);
@@ -14,6 +17,21 @@ class AuthRepository {
   final _logger = AppLogger.category('AuthRepository');
 
   AuthRepository(this._supabase);
+
+  // URL de redirecionamento adaptada para Web e Mobile
+  String get _defaultRedirectUrl {
+    if (kIsWeb) {
+      return '${Uri.base.origin}${AppRoutes.welcome}';
+    }
+    return 'orelinhas://login-callback';
+  }
+
+  String get _passwordResetRedirectUrl {
+    if (kIsWeb) {
+      return '${Uri.base.origin}${AppRoutes.updatePassword}';
+    }
+    return 'orelinhas://login-callback';
+  }
 
   // Escutar as mudanças de estado (logado, deslogado)
   Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
@@ -34,7 +52,7 @@ class AuthRepository {
       await _supabase.auth.signUp(
         email: email,
         password: password,
-        emailRedirectTo: 'orelinhas://login-callback',
+        emailRedirectTo: _defaultRedirectUrl,
         data: {
           'name': name,
           'phone': phone,
@@ -64,7 +82,7 @@ class AuthRepository {
   }
 
   // Verificar se o e-mail está bloqueado temporariamente
-  Future<Map<String, dynamic>> checkLock(String email) async {
+  Future checkLock(String email) async {
     _logger.i('Verificando status de bloqueio da conta.', context: {'email': email});
     try {
       final response = await _supabase.rpc(
@@ -79,8 +97,6 @@ class AuthRepository {
       return {'is_locked': false, 'remaining_seconds': 0, 'attempts_count': 0};
     } catch (e, st) {
       _logger.e('Erro ao verificar status de bloqueio no RPC.', error: e, stackTrace: st, context: {'email': email});
-      // Em caso de falha física de infraestrutura, retorna falso para não travar completamente o app, 
-      // mas propaga erro de rede se for o caso
       throw AppErrorMapper.map(e, st);
     }
   }
@@ -98,7 +114,6 @@ class AuthRepository {
       );
     } catch (e) {
       _logger.w('Falha técnica silenciosa ao registrar tentativa no RPC.', context: {'email': email, 'erro': e.toString()});
-      // RPC secundário não deve travar o fluxo primário do app
     }
   }
 
@@ -108,7 +123,7 @@ class AuthRepository {
     try {
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: 'orelinhas://login-callback',
+        redirectTo: _defaultRedirectUrl,
       );
     } catch (e, st) {
       _logger.e('Erro no login via Google OAuth.', error: e, stackTrace: st);
@@ -122,7 +137,7 @@ class AuthRepository {
     try {
       await _supabase.auth.resetPasswordForEmail(
         email,
-        redirectTo: 'orelinhas://login-callback',
+        redirectTo: _passwordResetRedirectUrl,
       );
       _logger.i('E-mail de redefinição enviado com sucesso.', context: {'email': email});
     } catch (e, st) {
