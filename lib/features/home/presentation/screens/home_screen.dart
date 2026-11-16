@@ -534,7 +534,8 @@ class _RecentPets extends ConsumerWidget {
               return PetGridCard(
                 alert: alert,
                 onTap: () => context.push(
-                  AppRoutes.petLostDetails(alert.id),
+                  // Mesma tela de detalhes do Explorar
+                  '${AppRoutes.publicProfile(alert.userId)}?lostId=${alert.id}',
                   extra: alert,
                 ),
               );
@@ -556,7 +557,8 @@ class _RecentPets extends ConsumerWidget {
                 child: PetGridCard(
                   alert: alert,
                   onTap: () => context.push(
-                    AppRoutes.petLostDetails(alert.id),
+                    // Mesma tela de detalhes do Explorar
+                    '${AppRoutes.publicProfile(alert.userId)}?lostId=${alert.id}',
                     extra: alert,
                   ),
                 ),
