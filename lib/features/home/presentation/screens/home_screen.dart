@@ -9,6 +9,17 @@ import '../../../notification/presentation/widgets/notification_badge_button.dar
 import '../../../pet_lost/presentation/controllers/public_pet_lost_controller.dart';
 import '../../../pet_lost/presentation/widgets/pet_widgets.dart';
 
+/// Cores extras usadas só nos blocos de atalho da home.
+class _HomeColors {
+  static const sun = Color(0xFFF4E7C9);
+  static const sunText = Color(0xFF6B4A12);
+  static const sky = Color(0xFFE3EEF3);
+  static const skyText = Color(0xFF24506A);
+  static const red = Color(0xFFC75A47);
+  static const redSoft = Color(0xFFFDF1EE);
+  static const redText = Color(0xFF8E3526);
+}
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -64,23 +75,23 @@ class HomeScreen extends ConsumerWidget {
                       ],
                       Text(
                         firstName == null ? 'Olá!' : 'Olá, $firstName!',
-                        style: isDesktop
-                            ? AppTextStyles.heading1().copyWith(fontSize: 28)
-                            : AppTextStyles.heading2(),
+                        style: AppTextStyles.heading1().copyWith(
+                          fontSize: isDesktop ? 28 : 24,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         'Gerenciamento inteligente para proteção e bem-estar animal.',
-                        style: AppTextStyles.bodySmall(
+                        style: AppTextStyles.body(
                           color: AppColors.textSecondary,
-                        ).copyWith(fontSize: isDesktop ? 14 : 12),
+                        ).copyWith(fontSize: isDesktop ? 15 : 13),
                       ),
-                      SizedBox(height: isDesktop ? 22 : 14),
+                      SizedBox(height: isDesktop ? 22 : 16),
                       const _HeroCard(),
-                      const SizedBox(height: 16),
-                      const _QuickActions(),
-                      const SizedBox(height: 16),
-                      _ReportAbuseBanner(
+                      SizedBox(height: isDesktop ? 18 : 14),
+                      const _QuickTiles(),
+                      SizedBox(height: isDesktop ? 18 : 14),
+                      _ReportAbuseStrip(
                         onTap: () => context.push(AppRoutes.reportAbuse),
                       ),
                       const SizedBox(height: 28),
@@ -89,7 +100,9 @@ class HomeScreen extends ConsumerWidget {
                           Expanded(
                             child: Text(
                               'Animais recentes',
-                              style: AppTextStyles.sectionHeader(),
+                              style: AppTextStyles.sectionHeader().copyWith(
+                                fontSize: 18,
+                              ),
                             ),
                           ),
                           TextButton(
@@ -112,9 +125,44 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Banner de destaque: texto sobre o verde à esquerda e a foto do cachorro
-/// à direita. Um degradê do mesmo verde do fundo passa POR CIMA da foto, então
-/// a transição entre o verde e a imagem fica contínua, sem borda.
+/// Recorte da arte do Orelinhas com o cachorro e o gato (sem o logo).
+class _DogAndCatPhoto extends StatelessWidget {
+  final Alignment alignment;
+
+  const _DogAndCatPhoto({this.alignment = Alignment.center});
+
+  // Faixa da arte original (720x1280) que mostra só os dois animais.
+  static const double _top = 560;
+  static const double _bottom = 1010;
+  static const double _height = 1280;
+
+  @override
+  Widget build(BuildContext context) {
+    const visible = (_bottom - _top) / _height;
+    const alignY = 2 * _top / (_height - (_bottom - _top)) - 1;
+    return ExcludeSemantics(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        alignment: alignment,
+        clipBehavior: Clip.hardEdge,
+        child: ClipRect(
+          child: Align(
+            alignment: const Alignment(0, alignY),
+            heightFactor: visible,
+            child: Image.asset(
+              'assets/images/welcome.webp',
+              width: 720,
+              height: _height,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Banner dividido: texto sobre fundo branco e a foto ao lado (PC) ou em
+/// cima (celular). Sem degradê, então não há emenda entre cor e imagem.
 class _HeroCard extends StatelessWidget {
   const _HeroCard();
 
@@ -122,270 +170,327 @@ class _HeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final isWide = width >= 640;
-        final height = isWide ? 220.0 : 200.0;
-        // A área da foto acompanha a proporção do recorte (cachorro e gato),
-        // para não ampliar demais em telas largas.
-        final photoWidth = isWide
-            ? (height * 1.6).clamp(0.0, width * 0.5)
-            : width * 0.55;
+        final wide = constraints.maxWidth >= 760;
 
-        return Container(
-          height: height,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: AppColors.primaryDark,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Stack(
+        final text = Padding(
+          padding: wide
+              ? const EdgeInsets.fromLTRB(36, 30, 28, 30)
+              : const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Foto recortada no rosto do cachorro
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: photoWidth,
-                child: ExcludeSemantics(
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    clipBehavior: Clip.hardEdge,
-                    alignment: Alignment.center,
-                    child: ClipRect(
-                      // Recorte do rosto do cachorro com o gato
-                      child: Align(
-                        alignment: const Alignment(0, 0.23),
-                        heightFactor: 0.43,
-                        child: Image.asset(
-                          'assets/images/welcome.webp',
-                          width: 720,
-                          height: 1280,
+              Text(
+                'PET PERDIDO?',
+                style: AppTextStyles.label(
+                  color: AppColors.primary,
+                ).copyWith(fontSize: 11.5, letterSpacing: 0.8),
+              ),
+              const SizedBox(height: 8),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(text: 'E se quem encontrou seu pet '),
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.baseline,
+                      baseline: TextBaseline.alphabetic,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'não souber',
+                          style: _titleStyle(wide, AppColors.primary),
                         ),
                       ),
                     ),
-                  ),
-                ),
-              ),
-              // Degradê do verde do fundo sobre a foto (transição suave).
-              // Começa um pouco antes da foto para esconder a emenda.
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: photoWidth + 4,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: const [
-                        AppColors.primaryDark,
-                        Color(0xD9143F30),
-                        Color(0x66143F30),
-                        Color(0x00143F30),
-                      ],
-                      stops: isWide
-                          ? const [0.02, 0.25, 0.55, 0.85]
-                          : const [0.05, 0.45, 0.75, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-              // Texto e botão
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  isWide ? 32 : 20,
-                  20,
-                  isWide ? photoWidth * 0.75 : width * 0.32,
-                  20,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'E se quem encontrou seu pet não souber que você está procurando?',
-                      style: AppTextStyles.heading3(color: Colors.white)
-                          .copyWith(
-                            fontSize: isWide ? 22 : 17,
-                            fontWeight: FontWeight.w800,
-                            height: 1.25,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Registre um alerta e deixe a vizinhança ajudar.',
-                      style: AppTextStyles.bodySmall(
-                        color: Colors.white.withAlpha(215),
-                      ).copyWith(fontSize: isWide ? 14 : 12),
-                    ),
-                    const SizedBox(height: 14),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppColors.primaryDark,
-                        minimumSize: const Size(0, 40),
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        shape: const StadiumBorder(),
-                      ),
-                      onPressed: () => context.push(AppRoutes.petLostCreate),
-                      icon: const Icon(Icons.campaign_outlined, size: 18),
-                      label: const Text('Registrar alerta'),
-                    ),
+                    const TextSpan(text: ' que você está procurando?'),
                   ],
                 ),
+                style: _titleStyle(wide, AppColors.primaryDark),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Registre um alerta e deixe a vizinhança ajudar.',
+                style: AppTextStyles.body(
+                  color: AppColors.textSecondary,
+                ).copyWith(fontSize: wide ? 15 : 13),
+              ),
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  shape: const StadiumBorder(),
+                ),
+                onPressed: () => context.push(AppRoutes.petLostCreate),
+                icon: const Icon(Icons.campaign_outlined, size: 19),
+                label: const Text('Registrar alerta'),
               ),
             ],
           ),
         );
+
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: wide
+              ? SizedBox(
+                  height: 250,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(flex: 5, child: text),
+                      const Expanded(
+                        flex: 4,
+                        child: _DogAndCatPhoto(alignment: Alignment(0, -0.4)),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(
+                      height: 150,
+                      child: _DogAndCatPhoto(alignment: Alignment(0, -0.5)),
+                    ),
+                    text,
+                  ],
+                ),
+        );
       },
     );
   }
+
+  static TextStyle _titleStyle(bool wide, Color color) =>
+      AppTextStyles.heading1(color: color).copyWith(
+        fontSize: wide ? 26 : 20,
+        fontWeight: FontWeight.w900,
+        height: 1.2,
+      );
 }
 
-class _QuickActions extends StatelessWidget {
-  const _QuickActions();
+typedef _Tile = ({
+  IconData icon,
+  String title,
+  String desc,
+  Color background,
+  Color foreground,
+  VoidCallback onTap,
+});
+
+/// Atalhos em blocos coloridos com um ícone grande de fundo.
+class _QuickTiles extends ConsumerWidget {
+  const _QuickTiles();
 
   @override
-  Widget build(BuildContext context) {
-    final actions = <_QuickAction>[
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Quantidade de alertas já carregados na lista de perdidos
+    final lostCount = ref.watch(publicPetLostControllerProvider).value?.length;
+
+    final tiles = <_Tile>[
       (
         icon: Icons.pets,
-        title: 'Pets Perdidos',
-        desc: 'Mural de alertas e buscas',
+        title: 'Pets perdidos',
+        desc: lostCount == null || lostCount == 0
+            ? 'Mural de alertas'
+            : lostCount == 1
+            ? '1 alerta ativo'
+            : '$lostCount alertas ativos',
+        background: AppColors.primaryDark,
+        foreground: Colors.white,
         onTap: () => context.go(AppRoutes.petLost),
       ),
       (
         icon: Icons.check_circle_outline,
-        title: 'Pets Encontrados',
+        title: 'Encontrados',
         desc: 'Mural de achados',
+        background: AppColors.accent,
+        foreground: AppColors.primaryDark,
         onTap: () => context.push(AppRoutes.petFound),
       ),
       (
         icon: Icons.favorite_border_rounded,
-        title: 'Adoção de Pets',
-        desc: 'Divulgue ou encontre pets',
+        title: 'Adoção',
+        desc: 'Divulgue ou adote',
+        background: _HomeColors.sun,
+        foreground: _HomeColors.sunText,
         onTap: () => context.push(AppRoutes.petAdoption),
       ),
       (
         icon: Icons.map_outlined,
-        title: 'Mapa de Alertas',
+        title: 'Mapa',
         desc: 'Alertas perto de você',
+        background: _HomeColors.sky,
+        foreground: _HomeColors.skyText,
         onTap: () => context.go(AppRoutes.petLostMap),
       ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // PC: os 4 atalhos numa linha só. Celular: grade 2x2 compacta.
-        final wide = constraints.maxWidth >= 760;
-        final columns = wide ? 4 : 2;
-        final tileHeight = wide ? 92.0 : 116.0;
+        // PC: os 4 numa linha. Celular: grade 2x2.
+        final columns = constraints.maxWidth >= 760 ? 4 : 2;
+        final tileHeight = columns == 4 ? 150.0 : 128.0;
+        const gap = 14.0;
         return GridView.count(
           crossAxisCount: columns,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
+          mainAxisSpacing: gap,
+          crossAxisSpacing: gap,
           childAspectRatio:
-              (constraints.maxWidth - 12 * (columns - 1)) /
+              (constraints.maxWidth - gap * (columns - 1)) /
               columns /
               tileHeight,
-          children: [
-            for (final a in actions)
-              _QuickActionTile(action: a, horizontal: wide),
-          ],
+          children: [for (final t in tiles) _QuickTile(tile: t)],
         );
       },
     );
   }
 }
 
-typedef _QuickAction = ({
-  IconData icon,
-  String title,
-  String desc,
-  VoidCallback onTap,
-});
+class _QuickTile extends StatelessWidget {
+  final _Tile tile;
 
-/// Atalho compacto: ícone à esquerda, título e descrição, seta à direita.
-class _QuickActionTile extends StatelessWidget {
-  final _QuickAction action;
-
-  /// PC: ícone à esquerda. Celular: ícone em cima (cabe melhor em 2 colunas).
-  final bool horizontal;
-
-  const _QuickActionTile({required this.action, this.horizontal = true});
+  const _QuickTile({required this.tile});
 
   @override
   Widget build(BuildContext context) {
-    final icon = Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        color: AppColors.primarySoft,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(action.icon, color: AppColors.primary, size: 22),
-    );
-    final texts = Column(
-      mainAxisAlignment: horizontal
-          ? MainAxisAlignment.center
-          : MainAxisAlignment.start,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          action.title,
-          style: AppTextStyles.heading3().copyWith(fontSize: 14),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          action.desc,
-          style: AppTextStyles.bodySmall(),
-          maxLines: horizontal ? 2 : 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-
+    final dark = tile.background == AppColors.primaryDark;
     return Material(
-      color: AppColors.surfaceLight,
-      borderRadius: BorderRadius.circular(18),
+      color: tile.background,
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: action.onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: horizontal
-              ? Row(
-                  children: [
-                    icon,
-                    const SizedBox(width: 12),
-                    Expanded(child: texts),
+        onTap: tile.onTap,
+        child: Stack(
+          children: [
+            // Ícone grande decorativo no canto
+            Positioned(
+              right: -10,
+              top: -10,
+              child: ExcludeSemantics(
+                child: Icon(
+                  tile.icon,
+                  size: 84,
+                  color: tile.foreground.withAlpha(dark ? 45 : 55),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: dark
+                          ? Colors.white.withAlpha(38)
+                          : Colors.white.withAlpha(180),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(tile.icon, size: 20, color: tile.foreground),
+                  ),
+                  const Spacer(),
+                  Text(
+                    tile.title,
+                    style: AppTextStyles.heading3(
+                      color: tile.foreground,
+                    ).copyWith(fontSize: 16, fontWeight: FontWeight.w800),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    tile.desc,
+                    style: AppTextStyles.bodySmall(
+                      color: tile.foreground.withAlpha(205),
+                    ).copyWith(fontSize: 12.5),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Faixa discreta para denunciar maus-tratos.
+class _ReportAbuseStrip extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ReportAbuseStrip({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _HomeColors.redSoft,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 520;
+              final question = Text(
+                'Viu maus-tratos ou abandono?',
+                style: AppTextStyles.label(
+                  color: _HomeColors.redText,
+                ).copyWith(fontSize: 14),
+              );
+              final link = Text(
+                'Denunciar de forma anônima',
+                style: AppTextStyles.label(color: _HomeColors.redText).copyWith(
+                  fontSize: wide ? 14 : 13,
+                  decoration: TextDecoration.underline,
+                  decorationColor: _HomeColors.redText,
+                ),
+              );
+              return Row(
+                children: [
+                  const Icon(
+                    Icons.shield_outlined,
+                    color: _HomeColors.red,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: wide
+                        ? Row(children: [question, const Spacer(), link])
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              question,
+                              const SizedBox(height: 2),
+                              link,
+                            ],
+                          ),
+                  ),
+                  if (!wide)
                     const Icon(
                       Icons.chevron_right_rounded,
-                      color: AppColors.textSecondary,
-                      size: 20,
+                      color: _HomeColors.redText,
                     ),
-                  ],
-                )
-              : Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      icon,
-                      const SizedBox(height: 10),
-                      Expanded(child: texts),
-                    ],
-                  ),
-                ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -517,85 +622,6 @@ class _RoundIconButton extends StatelessWidget {
           child: SizedBox.square(
             dimension: 42,
             child: Icon(icon, color: AppColors.primary, size: 22),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ReportAbuseBanner extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _ReportAbuseBanner({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surfaceLight,
-      borderRadius: BorderRadius.circular(18),
-      elevation: 0,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFF2D1CC)),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFC75A47).withAlpha(15),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC75A47),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.shield_outlined,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Denunciar Maus-Tratos',
-                      style: AppTextStyles.heading3(
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Relate situações de risco ou abandono de forma segura e anônima.',
-                      style: AppTextStyles.bodySmall(
-                        color: AppColors.textSecondary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.textSecondary,
-                size: 24,
-              ),
-            ],
           ),
         ),
       ),
