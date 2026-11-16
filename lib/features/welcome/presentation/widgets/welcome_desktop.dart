@@ -42,9 +42,18 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
             child: Stack(
               children: [
                 // Patinhas nas sobras brancas ao lado da foto
-                _Paw(left: 28, top: 90, size: 54, angle: -0.35, alpha: 32),
-                _Paw(left: -30, bottom: 120, size: 130, angle: 0.25, alpha: 18),
-                Padding(padding: EdgeInsets.all(_margin), child: _PhotoPanel()),
+                DecorPaw(left: 28, top: 90, size: 54, angle: -0.35, alpha: 32),
+                DecorPaw(
+                  left: -30,
+                  bottom: 120,
+                  size: 130,
+                  angle: 0.25,
+                  alpha: 18,
+                ),
+                Padding(
+                  padding: EdgeInsets.all(_margin),
+                  child: WelcomePhotoPanel(),
+                ),
               ],
             ),
           ),
@@ -58,10 +67,16 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
     return Stack(
       children: [
         // Patinhas verdes decorativas
-        const _Paw(right: -40, top: -30, size: 210, angle: 0.35, alpha: 22),
-        const _Paw(right: 90, top: 190, size: 46, angle: -0.25, alpha: 40),
-        const _Paw(left: 30, bottom: -40, size: 160, angle: -0.3, alpha: 18),
-        const _Paw(right: 60, bottom: 70, size: 70, angle: 0.2, alpha: 30),
+        const DecorPaw(right: -40, top: -30, size: 210, angle: 0.35, alpha: 22),
+        const DecorPaw(right: 90, top: 190, size: 46, angle: -0.25, alpha: 40),
+        const DecorPaw(
+          left: 30,
+          bottom: -40,
+          size: 160,
+          angle: -0.3,
+          alpha: 18,
+        ),
+        const DecorPaw(right: 60, bottom: 70, size: 70, angle: 0.2, alpha: 30),
         Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 56, vertical: 40),
@@ -203,8 +218,8 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
 
 /// Foto do Orelinhas em destaque, inteira e no tamanho natural da arte,
 /// centralizada na metade esquerda da tela.
-class _PhotoPanel extends StatelessWidget {
-  const _PhotoPanel();
+class WelcomePhotoPanel extends StatelessWidget {
+  const WelcomePhotoPanel({super.key});
 
   static const double _radius = 34;
 
@@ -256,7 +271,7 @@ class _PhotoPanel extends StatelessWidget {
 }
 
 /// Patinha verde decorativa no fundo branco.
-class _Paw extends StatelessWidget {
+class DecorPaw extends StatelessWidget {
   final double? left;
   final double? right;
   final double? top;
@@ -265,7 +280,8 @@ class _Paw extends StatelessWidget {
   final double angle;
   final int alpha;
 
-  const _Paw({
+  const DecorPaw({
+    super.key,
     this.left,
     this.right,
     this.top,

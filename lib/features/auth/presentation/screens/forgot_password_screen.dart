@@ -64,6 +64,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
       subtitle:
           'Informe o e-mail da sua conta e enviaremos um link para você criar uma nova senha.',
       showLogo: false,
+      icon: Icons.lock_reset_rounded,
       children: [
         const FieldLabel('E-mail'),
         TextField(
