@@ -374,12 +374,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
     });
 
+    // No PC o título aparece grande dentro da página
+    final showAppBar = MediaQuery.sizeOf(context).width < 900;
+
     return Scaffold(
-      appBar: AppBar(
-        // Aba principal (Perfil): sem botão de voltar
-        automaticallyImplyLeading: false,
-        title: const Text('Minha Conta'),
-      ),
+      appBar: showAppBar
+          ? AppBar(
+              // Aba principal (Perfil): sem botão de voltar
+              automaticallyImplyLeading: false,
+              title: const Text('Minha conta'),
+            )
+          : null,
       body: profileState.when(
         data: (profile) {
           if (profile == null) {
@@ -394,6 +399,486 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               _selectedImageBytes != null ||
               (_existingAvatarUrl != null && _existingAvatarUrl!.isNotEmpty);
 
+          final isDesktop = MediaQuery.sizeOf(context).width >= 900;
+          final isNewProfile = ref
+              .read(profileControllerProvider.notifier)
+              .isNewProfile;
+
+          // ---------- Campos (montados uma vez, usados no layout escolhido)
+          Widget labeled(String label, Widget field) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [FieldLabel(label), field],
+          );
+
+          final emailField = labeled(
+            'E-mail',
+            TextFormField(
+              initialValue: profile.email,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                helperText: 'O e-mail não pode ser alterado.',
+                prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
+              ),
+              readOnly: true,
+              enabled: false,
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+          );
+
+          final nameField = labeled(
+            'Nome completo',
+            TextFormField(
+              controller: _nameController,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
+              ),
+              validator: AppValidators.combine([
+                AppValidators.required('Nome Completo'),
+                AppValidators.maxLength(100, 'Nome Completo'),
+              ]),
+            ),
+          );
+
+          final phoneField = labeled(
+            'Telefone (com DDD)',
+            TextFormField(
+              controller: _phoneController,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: '(11) 99999-9999',
+                prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+              ),
+              keyboardType: TextInputType.phone,
+              inputFormatters: [PhoneInputFormatter()],
+              validator: AppValidators.combine([
+                AppValidators.required('Telefone'),
+                AppValidators.phone(),
+              ]),
+            ),
+          );
+
+          final cepField = labeled(
+            'CEP',
+            TextFormField(
+              controller: _cepController,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: '01001-000',
+                suffixIcon: _isLoadingCep
+                    ? const Padding(
+                        padding: EdgeInsets.all(14.0),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : null,
+              ),
+              keyboardType: TextInputType.number,
+              inputFormatters: [CepInputFormatter()],
+              validator: AppValidators.combine([
+                AppValidators.required('CEP'),
+                AppValidators.cep(),
+              ]),
+            ),
+          );
+
+          final stateField = labeled(
+            'UF',
+            TextFormField(
+              controller: _stateController,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: 'SP',
+              ),
+              textCapitalization: TextCapitalization.characters,
+              validator: AppValidators.combine([
+                AppValidators.required('Estado (UF)'),
+                AppValidators.minLength(2, 'Estado (UF)'),
+                AppValidators.maxLength(2, 'Estado (UF)'),
+              ]),
+            ),
+          );
+
+          final cityField = labeled(
+            'Cidade',
+            TextFormField(
+              controller: _cityController,
+              decoration: AppInputDecoration.defaultDecoration(labelText: ''),
+              validator: AppValidators.combine([
+                AppValidators.required('Cidade'),
+                AppValidators.maxLength(100, 'Cidade'),
+              ]),
+            ),
+          );
+
+          final districtField = labeled(
+            'Bairro',
+            TextFormField(
+              controller: _districtController,
+              decoration: AppInputDecoration.defaultDecoration(labelText: ''),
+              validator: AppValidators.combine([
+                AppValidators.required('Bairro'),
+                AppValidators.maxLength(100, 'Bairro'),
+              ]),
+            ),
+          );
+
+          final streetField = labeled(
+            'Rua',
+            TextFormField(
+              controller: _streetController,
+              decoration: AppInputDecoration.defaultDecoration(labelText: ''),
+              validator: AppValidators.combine([
+                AppValidators.required('Rua / Logradouro'),
+                AppValidators.maxLength(150, 'Rua / Logradouro'),
+              ]),
+            ),
+          );
+
+          final numberField = labeled(
+            'Nº',
+            TextFormField(
+              controller: _numberController,
+              decoration: AppInputDecoration.defaultDecoration(labelText: ''),
+              validator: AppValidators.combine([
+                AppValidators.required('Número'),
+                AppValidators.maxLength(20, 'Número'),
+              ]),
+            ),
+          );
+
+          final complementField = labeled(
+            'Complemento (opcional)',
+            TextFormField(
+              controller: _complementController,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: 'Ex.: Bloco B, Apto 104',
+              ),
+              validator: AppValidators.combine([
+                AppValidators.maxLength(150, 'Complemento'),
+              ]),
+            ),
+          );
+
+          // Linha de campos com proporções (flex)
+          Widget fieldRow(List<(int, Widget)> items) => Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < items.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                Expanded(flex: items[i].$1, child: items[i].$2),
+              ],
+            ],
+          );
+
+          const gap = SizedBox(height: 16);
+
+          // ---------- Blocos
+          final avatar = GestureDetector(
+            onTap: _pickImage,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: isDesktop ? 48 : 34,
+                  backgroundColor: AppColors.primarySoft,
+                  backgroundImage: _selectedImageBytes != null
+                      ? MemoryImage(_selectedImageBytes!)
+                      : (hasAvatar ? NetworkImage(_existingAvatarUrl!) : null)
+                            as ImageProvider?,
+                  child: hasAvatar
+                      ? null
+                      : Icon(
+                          Icons.person_rounded,
+                          size: isDesktop ? 50 : 36,
+                          color: AppColors.primary,
+                        ),
+                ),
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(
+                      Icons.photo_camera_outlined,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+
+          final nameText = Text(
+            profile.name.isEmpty ? 'Seu nome' : profile.name,
+            style: AppTextStyles.heading2(),
+            maxLines: isDesktop ? 2 : 1,
+            textAlign: isDesktop ? TextAlign.center : TextAlign.start,
+            overflow: TextOverflow.ellipsis,
+          );
+          final emailText = Text(
+            profile.email,
+            style: AppTextStyles.bodySmall(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+          final changePhoto = GestureDetector(
+            onTap: _pickImage,
+            child: Text(
+              'Alterar foto',
+              style: AppTextStyles.label(color: AppColors.primary),
+            ),
+          );
+
+          final headerCard = _SectionCard(
+            padding: EdgeInsets.all(isDesktop ? 24 : 16),
+            child: isDesktop
+                ? Column(
+                    children: [
+                      avatar,
+                      const SizedBox(height: 14),
+                      nameText,
+                      const SizedBox(height: 2),
+                      emailText,
+                      const SizedBox(height: 10),
+                      changePhoto,
+                    ],
+                  )
+                : Row(
+                    children: [
+                      avatar,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            nameText,
+                            const SizedBox(height: 2),
+                            emailText,
+                            const SizedBox(height: 4),
+                            changePhoto,
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+          );
+
+          final menuCard = _SectionCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _MenuTile(
+                  icon: Icons.article_outlined,
+                  title: 'Meus alertas de pets perdidos',
+                  onTap: () => context.go(AppRoutes.myAlerts),
+                ),
+                const Divider(height: 1, indent: 56),
+                _MenuTile(
+                  icon: Icons.campaign_outlined,
+                  title: 'Registrar pet perdido',
+                  onTap: () => context.push(AppRoutes.petLostCreate),
+                ),
+                const Divider(height: 1, indent: 56),
+                _MenuTile(
+                  icon: Icons.check_circle_outline,
+                  title: 'Pets encontrados',
+                  onTap: () => context.push(AppRoutes.petFound),
+                ),
+                const Divider(height: 1, indent: 56),
+                _MenuTile(
+                  icon: Icons.favorite_border_rounded,
+                  title: 'Adoção de pets',
+                  onTap: () => context.push(AppRoutes.petAdoption),
+                ),
+                const Divider(height: 1, indent: 56),
+                _MenuTile(
+                  icon: Icons.info_outline_rounded,
+                  title: 'Sobre o Orelinhas',
+                  onTap: () => context.go(AppRoutes.about),
+                ),
+                const Divider(height: 1, indent: 56),
+                _MenuTile(
+                  icon: Icons.logout_rounded,
+                  title: 'Sair da conta',
+                  color: AppColors.error,
+                  onTap: _confirmSignOut,
+                ),
+              ],
+            ),
+          );
+
+          final personalCard = _FormSection(
+            icon: Icons.person_outline_rounded,
+            title: 'Dados pessoais',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: isDesktop
+                  ? [
+                      emailField,
+                      gap,
+                      fieldRow([(3, nameField), (2, phoneField)]),
+                    ]
+                  : [emailField, gap, nameField, gap, phoneField],
+            ),
+          );
+
+          final addressCard = _FormSection(
+            icon: Icons.home_outlined,
+            title: 'Endereço',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: isDesktop
+                  ? [
+                      fieldRow([
+                        (2, cepField),
+                        (1, stateField),
+                        (3, cityField),
+                      ]),
+                      gap,
+                      fieldRow([
+                        (2, districtField),
+                        (3, streetField),
+                        (1, numberField),
+                      ]),
+                      gap,
+                      complementField,
+                    ]
+                  : [
+                      fieldRow([(3, cepField), (2, stateField)]),
+                      gap,
+                      cityField,
+                      gap,
+                      districtField,
+                      gap,
+                      fieldRow([(3, streetField), (1, numberField)]),
+                      gap,
+                      complementField,
+                    ],
+            ),
+          );
+
+          final saveButton = profileState.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : ElevatedButton(
+                  style: AppButtonStyles.primary(),
+                  onPressed: _isLoadingCep ? null : () => _saveChanges(profile),
+                  child: const Text('Salvar alterações'),
+                );
+
+          final deleteButton = TextButton.icon(
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            label: const Text('Excluir minha conta'),
+            onPressed: _confirmDeleteAccount,
+          );
+
+          const deleteNote =
+              'Excluir a conta remove permanentemente seus '
+              'dados e todos os seus alertas.';
+
+          // ---------- Layout do PC: duas colunas
+          if (isDesktop) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(40, 28, 40, 36),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1120),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Minha conta',
+                          style: AppTextStyles.heading1().copyWith(
+                            fontSize: 28,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Gerencie seus dados e seus anúncios.',
+                          style: AppTextStyles.body(
+                            color: AppColors.textSecondary,
+                          ).copyWith(fontSize: 15),
+                        ),
+                        const SizedBox(height: 22),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 330,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  headerCard,
+                                  const SizedBox(height: 16),
+                                  menuCard,
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (isNewProfile) ...[
+                                    const _CompleteProfileBanner(),
+                                    const SizedBox(height: 16),
+                                  ],
+                                  personalCard,
+                                  const SizedBox(height: 16),
+                                  addressCard,
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            deleteButton,
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                left: 12,
+                                              ),
+                                              child: Text(
+                                                deleteNote,
+                                                style:
+                                                    AppTextStyles.bodySmall(),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      SizedBox(width: 240, child: saveButton),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+
+          // ---------- Layout do celular: uma coluna
           return SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
             child: Form(
@@ -401,407 +886,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (ref
-                      .read(profileControllerProvider.notifier)
-                      .isNewProfile) ...[
+                  if (isNewProfile) ...[
                     const _CompleteProfileBanner(),
                     const SizedBox(height: 14),
                   ],
-                  // Cabeçalho com avatar
-                  _SectionCard(
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          onTap: _pickImage,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              CircleAvatar(
-                                radius: 34,
-                                backgroundColor: AppColors.primarySoft,
-                                backgroundImage: _selectedImageBytes != null
-                                    ? MemoryImage(_selectedImageBytes!)
-                                    : (hasAvatar
-                                              ? NetworkImage(
-                                                  _existingAvatarUrl!,
-                                                )
-                                              : null)
-                                          as ImageProvider?,
-                                child: hasAvatar
-                                    ? null
-                                    : const Icon(
-                                        Icons.person_rounded,
-                                        size: 36,
-                                        color: AppColors.primary,
-                                      ),
-                              ),
-                              Positioned(
-                                right: -2,
-                                bottom: -2,
-                                child: Container(
-                                  padding: const EdgeInsets.all(5),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: const Icon(
-                                    Icons.photo_camera_outlined,
-                                    size: 13,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                profile.name.isEmpty
-                                    ? 'Seu nome'
-                                    : profile.name,
-                                style: AppTextStyles.heading2(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                profile.email,
-                                style: AppTextStyles.bodySmall(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              GestureDetector(
-                                onTap: _pickImage,
-                                child: Text(
-                                  'Alterar foto',
-                                  style: AppTextStyles.label(
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  headerCard,
                   const SizedBox(height: 14),
-
-                  // Atalhos
-                  _SectionCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      children: [
-                        _MenuTile(
-                          icon: Icons.article_outlined,
-                          title: 'Meus alertas de pets perdidos',
-                          onTap: () => context.go(AppRoutes.myAlerts),
-                        ),
-                        const Divider(height: 1, indent: 56),
-                        _MenuTile(
-                          icon: Icons.campaign_outlined,
-                          title: 'Registrar pet perdido',
-                          onTap: () => context.push(AppRoutes.petLostCreate),
-                        ),
-                        const Divider(height: 1, indent: 56),
-                        _MenuTile(
-                          icon: Icons.check_circle_outline,
-                          title: 'Pets encontrados',
-                          onTap: () => context.push(AppRoutes.petFound),
-                        ),
-                        const Divider(height: 1, indent: 56),
-                        _MenuTile(
-                          icon: Icons.favorite_border_rounded,
-                          title: 'Adoção de pets',
-                          onTap: () => context.push(AppRoutes.petAdoption),
-                        ),
-                        const Divider(height: 1, indent: 56),
-                        _MenuTile(
-                          icon: Icons.info_outline_rounded,
-                          title: 'Sobre o Orelinhas',
-                          onTap: () => context.go(AppRoutes.about),
-                        ),
-                        const Divider(height: 1, indent: 56),
-                        _MenuTile(
-                          icon: Icons.logout_rounded,
-                          title: 'Sair da conta',
-                          onTap: _confirmSignOut,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 26),
-
-                  Text('Dados pessoais', style: AppTextStyles.sectionHeader()),
-                  const SizedBox(height: 12),
-                  _SectionCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const FieldLabel('E-mail'),
-                        TextFormField(
-                          initialValue: profile.email,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: '',
-                            helperText: 'O e-mail não pode ser alterado.',
-                            prefixIcon: const Icon(
-                              Icons.mail_outline_rounded,
-                              size: 20,
-                            ),
-                          ),
-                          readOnly: true,
-                          enabled: false,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        const FieldLabel('Nome completo'),
-                        TextFormField(
-                          controller: _nameController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: '',
-                            prefixIcon: const Icon(
-                              Icons.person_outline_rounded,
-                              size: 20,
-                            ),
-                          ),
-                          validator: AppValidators.combine([
-                            AppValidators.required('Nome Completo'),
-                            AppValidators.maxLength(100, 'Nome Completo'),
-                          ]),
-                        ),
-                        const SizedBox(height: 16),
-
-                        const FieldLabel('Telefone (com DDD)'),
-                        TextFormField(
-                          controller: _phoneController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: '',
-                            hintText: '(11) 99999-9999',
-                            prefixIcon: const Icon(
-                              Icons.phone_outlined,
-                              size: 20,
-                            ),
-                          ),
-                          keyboardType: TextInputType.phone,
-                          inputFormatters: [PhoneInputFormatter()],
-                          validator: AppValidators.combine([
-                            AppValidators.required('Telefone'),
-                            AppValidators.phone(),
-                          ]),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 26),
-
-                  Text('Endereço', style: AppTextStyles.sectionHeader()),
-                  const SizedBox(height: 12),
-                  _SectionCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const FieldLabel('CEP'),
-                                  TextFormField(
-                                    controller: _cepController,
-                                    decoration:
-                                        AppInputDecoration.defaultDecoration(
-                                          labelText: '',
-                                          hintText: '01001-000',
-                                          suffixIcon: _isLoadingCep
-                                              ? const Padding(
-                                                  padding: EdgeInsets.all(14.0),
-                                                  child: SizedBox(
-                                                    width: 16,
-                                                    height: 16,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                        ),
-                                                  ),
-                                                )
-                                              : null,
-                                        ),
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [CepInputFormatter()],
-                                    validator: AppValidators.combine([
-                                      AppValidators.required('CEP'),
-                                      AppValidators.cep(),
-                                    ]),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 2,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const FieldLabel('UF'),
-                                  TextFormField(
-                                    controller: _stateController,
-                                    decoration:
-                                        AppInputDecoration.defaultDecoration(
-                                          labelText: '',
-                                          hintText: 'SP',
-                                        ),
-                                    textCapitalization:
-                                        TextCapitalization.characters,
-                                    validator: AppValidators.combine([
-                                      AppValidators.required('Estado (UF)'),
-                                      AppValidators.minLength(2, 'Estado (UF)'),
-                                      AppValidators.maxLength(2, 'Estado (UF)'),
-                                    ]),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-
-                        const FieldLabel('Cidade'),
-                        TextFormField(
-                          controller: _cityController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: '',
-                          ),
-                          validator: AppValidators.combine([
-                            AppValidators.required('Cidade'),
-                            AppValidators.maxLength(100, 'Cidade'),
-                          ]),
-                        ),
-                        const SizedBox(height: 16),
-
-                        const FieldLabel('Bairro'),
-                        TextFormField(
-                          controller: _districtController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: '',
-                          ),
-                          validator: AppValidators.combine([
-                            AppValidators.required('Bairro'),
-                            AppValidators.maxLength(100, 'Bairro'),
-                          ]),
-                        ),
-                        const SizedBox(height: 16),
-
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const FieldLabel('Rua'),
-                                  TextFormField(
-                                    controller: _streetController,
-                                    decoration:
-                                        AppInputDecoration.defaultDecoration(
-                                          labelText: '',
-                                        ),
-                                    validator: AppValidators.combine([
-                                      AppValidators.required(
-                                        'Rua / Logradouro',
-                                      ),
-                                      AppValidators.maxLength(
-                                        150,
-                                        'Rua / Logradouro',
-                                      ),
-                                    ]),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 1,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const FieldLabel('Nº'),
-                                  TextFormField(
-                                    controller: _numberController,
-                                    decoration:
-                                        AppInputDecoration.defaultDecoration(
-                                          labelText: '',
-                                        ),
-                                    validator: AppValidators.combine([
-                                      AppValidators.required('Número'),
-                                      AppValidators.maxLength(20, 'Número'),
-                                    ]),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-
-                        const FieldLabel('Complemento (opcional)'),
-                        TextFormField(
-                          controller: _complementController,
-                          decoration: AppInputDecoration.defaultDecoration(
-                            labelText: '',
-                            hintText: 'Ex.: Bloco B, Apto 104',
-                          ),
-                          validator: AppValidators.combine([
-                            AppValidators.maxLength(150, 'Complemento'),
-                          ]),
-                        ),
-                      ],
-                    ),
-                  ),
+                  menuCard,
+                  const SizedBox(height: 22),
+                  personalCard,
+                  const SizedBox(height: 16),
+                  addressCard,
                   const SizedBox(height: 24),
-
-                  if (profileState.isLoading)
-                    const Center(child: CircularProgressIndicator())
-                  else
-                    ElevatedButton(
-                      style: AppButtonStyles.primary(),
-                      onPressed: _isLoadingCep
-                          ? null
-                          : () => _saveChanges(profile),
-                      child: const Text('Salvar alterações'),
-                    ),
-
-                  const SizedBox(height: 32),
-
+                  saveButton,
+                  const SizedBox(height: 28),
                   Text(
-                    'Excluir a conta remove permanentemente seus dados e todos os seus alertas.',
+                    deleteNote,
                     style: AppTextStyles.bodySmall(),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.error,
-                    ),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                    label: const Text('Excluir minha conta'),
-                    onPressed: _confirmDeleteAccount,
-                  ),
+                  deleteButton,
                 ],
               ),
             ),
@@ -854,7 +959,8 @@ class _SectionCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
       ),
       child: child,
     );
@@ -865,23 +971,73 @@ class _MenuTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final VoidCallback onTap;
+  final Color? color;
 
   const _MenuTile({
     required this.icon,
     required this.title,
     required this.onTap,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, size: 22),
-      title: Text(title),
+      leading: Icon(icon, size: 22, color: color ?? AppColors.primary),
+      title: Text(
+        title,
+        style: AppTextStyles.body(color: color).copyWith(fontSize: 14.5),
+      ),
       trailing: const Icon(
         Icons.chevron_right_rounded,
         color: AppColors.textSecondary,
       ),
       onTap: onTap,
+    );
+  }
+}
+
+/// Cartão de formulário com título e ícone.
+class _FormSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  const _FormSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 20, color: AppColors.primary),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: AppTextStyles.heading3().copyWith(fontSize: 16.5),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
     );
   }
 }
