@@ -13,9 +13,6 @@ class _AboutColors {
   static const red = Color(0xFFC75A47);
   static const redSoft = Color(0xFFFDF1EE);
   static const redText = Color(0xFF8E3526);
-  // Cores oficiais dos ODS 15 e 4
-  static const ods15 = Color(0xFF3F9A2E);
-  static const ods4 = Color(0xFFC5192D);
 }
 
 /// Página institucional "Sobre o Orelinhas".
@@ -49,15 +46,9 @@ class AboutScreen extends StatelessWidget {
             title: 'Nossa história',
             children: [
               _Paragraph(
-                'O Orelinhas nasceu da necessidade de reunir, em um só lugar, '
-                'informações sobre proteção animal, cuidados, adoção '
-                'responsável e a busca por animais perdidos e encontrados.',
-              ),
-              SizedBox(height: 10),
-              _Paragraph(
-                'Nossa inspiração vem do caso do cão comunitário Orelha, que '
-                'despertou a atenção da sociedade para a importância da '
-                'proteção animal e da responsabilidade coletiva.',
+                'Inspirado no cão comunitário Orelha, o Orelinhas nasceu para '
+                'reunir num só lugar a busca por animais perdidos e '
+                'encontrados, a adoção responsável e a proteção animal.',
               ),
             ],
           );
@@ -69,17 +60,13 @@ class AboutScreen extends StatelessWidget {
             title: 'Nossa missão',
             children: [
               _Paragraph(
-                'Usar a tecnologia para facilitar a comunicação e ajudar '
-                'animais a reencontrarem seus tutores, de forma acessível, '
-                'organizada e acolhedora.',
+                'Usar a tecnologia para ajudar animais a voltarem para casa, '
+                'de forma acessível e acolhedora.',
               ),
-              SizedBox(height: 10),
-              _Check('Incentivar a proteção e o bem-estar animal.'),
-              _Check('Facilitar o acesso a informações confiáveis.'),
-              _Check('Incentivar a adoção responsável.'),
-              _Check('Ajudar a identificar e reencontrar animais perdidos.'),
-              _Check('Prevenir e conscientizar sobre os maus-tratos.'),
-              _Check('Gerar impacto social por meio da tecnologia.'),
+              SizedBox(height: 8),
+              _Check('Proteção e bem-estar animal.'),
+              _Check('Informação confiável e acessível.'),
+              _Check('Impacto social por meio da tecnologia.'),
             ],
           );
 
@@ -103,18 +90,11 @@ class AboutScreen extends StatelessWidget {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  history,
-                                  gap,
-                                  Expanded(child: _WhoWeAre()),
-                                ],
-                              ),
-                            ),
+                            Expanded(child: history),
                             gap,
                             Expanded(child: mission),
+                            gap,
+                            Expanded(child: _WhoWeAre()),
                           ],
                         ),
                       )
@@ -122,18 +102,13 @@ class AboutScreen extends StatelessWidget {
                       history,
                       gap,
                       mission,
+                      gap,
+                      const _WhoWeAre(),
                     ],
                     const SizedBox(height: 28),
                     const _SectionTitle('O que você encontra aqui'),
                     const SizedBox(height: 12),
                     const _FeatureTiles(),
-                    const SizedBox(height: 28),
-                    const _SectionTitle(
-                      'Objetivos de Desenvolvimento Sustentável',
-                    ),
-                    const SizedBox(height: 12),
-                    const _OdsCards(),
-                    if (!twoColumns) ...[gap, const _WhoWeAre()],
                   ],
                 ),
               ),
@@ -535,137 +510,6 @@ class _FeatureTile extends StatelessWidget {
   }
 }
 
-/// ODS 15 e ODS 4 em cartões lado a lado (empilhados no celular).
-class _OdsCards extends StatelessWidget {
-  const _OdsCards();
-
-  @override
-  Widget build(BuildContext context) {
-    const vida = _OdsCard(
-      number: '15',
-      color: _AboutColors.ods15,
-      icon: Icons.forest_outlined,
-      title: 'Vida Terrestre',
-      description: 'Proteção e bem-estar dos animais que convivem conosco.',
-    );
-    const educacao = _OdsCard(
-      number: '4',
-      color: _AboutColors.ods4,
-      icon: Icons.school_outlined,
-      title: 'Educação de Qualidade',
-      description:
-          'Informação acessível sobre cuidados, adoção responsável e '
-          'prevenção de maus-tratos.',
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= 760) {
-          return const IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: vida),
-                SizedBox(width: 16),
-                Expanded(child: educacao),
-              ],
-            ),
-          );
-        }
-        return const Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [vida, SizedBox(height: 12), educacao],
-        );
-      },
-    );
-  }
-}
-
-class _OdsCard extends StatelessWidget {
-  final String number;
-  final Color color;
-  final IconData icon;
-  final String title;
-  final String description;
-
-  const _OdsCard({
-    required this.number,
-    required this.color,
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'ODS',
-                  style: AppTextStyles.label(
-                    color: Colors.white.withAlpha(220),
-                  ).copyWith(fontSize: 11, letterSpacing: 0.8),
-                ),
-                Text(
-                  number,
-                  style: AppTextStyles.heading1(color: Colors.white).copyWith(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    height: 1.05,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Icon(icon, size: 18, color: color),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        title,
-                        style: AppTextStyles.heading3().copyWith(fontSize: 16),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: AppTextStyles.body(color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// "Quem somos" em destaque verde-escuro com patinha decorativa.
 class _WhoWeAre extends StatelessWidget {
   const _WhoWeAre();
@@ -723,10 +567,9 @@ class _WhoWeAre extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  'Somos um grupo de estudantes que desenvolveu o Orelinhas como '
-                  'Trabalho de Conclusão de Curso, acreditando que a tecnologia '
-                  'pode gerar impacto social real e ajudar cada vez mais animais '
-                  'a voltarem para casa.',
+                  'Somos um grupo de estudantes que criou o Orelinhas como '
+                  'Trabalho de Conclusão de Curso, para ajudar mais animais a '
+                  'voltarem para casa.',
                   style: AppTextStyles.body(
                     color: Colors.white.withAlpha(225),
                   ).copyWith(height: 1.55),
