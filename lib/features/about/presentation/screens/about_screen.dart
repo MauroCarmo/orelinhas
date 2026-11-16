@@ -7,7 +7,7 @@ import '../../../../core/widgets/orelinhas_logo.dart';
 /// Página institucional "Sobre o Orelinhas".
 ///
 /// Visual próprio, diferente da tela de início: cabeçalho verde centralizado,
-/// história com foto, valores em colunas, recursos em lista e "Quem somos".
+/// história do Orelha com foto, valores em colunas e recursos em lista.
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
@@ -45,8 +45,6 @@ class AboutScreen extends StatelessWidget {
                 _Values(),
                 SizedBox(height: 40),
                 _Features(),
-                SizedBox(height: 32),
-                _WhoWeAre(),
               ],
             ),
           ),
@@ -182,40 +180,36 @@ class _Hero extends StatelessWidget {
   );
 }
 
-/// Recorte da arte do Orelinhas com o cachorro e o gato, inteiro.
-class _DogAndCatPhoto extends StatelessWidget {
-  const _DogAndCatPhoto();
+/// Foto do Orelha, inteira, com legenda.
+class _OrelhaPhoto extends StatelessWidget {
+  const _OrelhaPhoto();
 
-  static const double _top = 500;
-  static const double _bottom = 1010;
-  static const double _height = 1280;
-  static const double aspect = 720 / (_bottom - _top);
+  /// Proporção da foto (768x568).
+  static const double aspect = 768 / 568;
 
   @override
   Widget build(BuildContext context) {
-    const visible = (_bottom - _top) / _height;
-    const alignY = 2 * _top / (_height - (_bottom - _top)) - 1;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: AspectRatio(
-        aspectRatio: aspect,
-        child: ExcludeSemantics(
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: ClipRect(
-              child: Align(
-                alignment: const Alignment(0, alignY),
-                heightFactor: visible,
-                child: Image.asset(
-                  'assets/images/welcome.webp',
-                  width: 720,
-                  height: _height,
-                ),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: AspectRatio(
+            aspectRatio: aspect,
+            child: Image.asset(
+              'assets/images/orelha.webp',
+              fit: BoxFit.cover,
+              semanticLabel:
+                  'Orelha, cão comunitário da Praia Brava, em Florianópolis',
             ),
           ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          'Orelha, cão comunitário da Praia Brava, Florianópolis (SC)',
+          style: AppTextStyles.bodySmall().copyWith(fontSize: 12.5),
+        ),
+      ],
     );
   }
 }
@@ -271,13 +265,13 @@ class _Story extends StatelessWidget {
             children: [
               Expanded(flex: 11, child: text),
               const SizedBox(width: 40),
-              const Expanded(flex: 10, child: _DogAndCatPhoto()),
+              const Expanded(flex: 10, child: _OrelhaPhoto()),
             ],
           );
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [text, const SizedBox(height: 20), const _DogAndCatPhoto()],
+          children: [text, const SizedBox(height: 20), const _OrelhaPhoto()],
         );
       },
     );
@@ -443,48 +437,6 @@ class _Features extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-/// "Quem somos", centralizado sobre fundo verde-claro.
-class _WhoWeAre extends StatelessWidget {
-  const _WhoWeAre();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-      decoration: BoxDecoration(
-        color: AppColors.primarySoft,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        children: [
-          const Icon(Icons.school_outlined, color: AppColors.primary, size: 34),
-          const SizedBox(height: 10),
-          Text(
-            'Quem somos',
-            style: AppTextStyles.heading1().copyWith(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Text(
-              'Somos um grupo de estudantes que criou o Orelinhas como '
-              'Trabalho de Conclusão de Curso, para ajudar mais animais a '
-              'voltarem para casa.',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.body(
-                color: AppColors.textPrimary,
-              ).copyWith(fontSize: 15, height: 1.55),
-            ),
-          ),
-        ],
       ),
     );
   }
