@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/orelinhas_logo.dart';
@@ -41,9 +39,13 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(_margin),
-              child: _PhotoPanel(),
+            child: Stack(
+              children: [
+                // Patinhas nas sobras brancas ao lado da foto
+                _Paw(left: 28, top: 90, size: 54, angle: -0.35, alpha: 32),
+                _Paw(left: -30, bottom: 120, size: 130, angle: 0.25, alpha: 18),
+                Padding(padding: EdgeInsets.all(_margin), child: _PhotoPanel()),
+              ],
             ),
           ),
           Expanded(child: _buildAuthSide()),
@@ -199,103 +201,54 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
   }
 }
 
-/// Foto do Orelinhas em destaque, ocupando metade da tela.
-///
-/// A arte é vertical, então ela aparece inteira no centro (logo, frase, o
-/// cachorro e o gato) e as laterais são preenchidas com a própria foto
-/// desfocada, para não cortar nada.
+/// Foto do Orelinhas em destaque, inteira e no tamanho natural da arte,
+/// centralizada na metade esquerda da tela.
 class _PhotoPanel extends StatelessWidget {
   const _PhotoPanel();
 
   static const double _radius = 34;
 
-  Widget _art() {
-    return ClipRect(
-      child: Align(
-        alignment: Alignment.topCenter,
-        heightFactor: _WelcomeDesktopState._artVisibleFraction,
-        child: Image.asset(
-          'assets/images/welcome.webp',
-          width: _WelcomeDesktopState._artWidth,
-          height: _WelcomeDesktopState._artHeight,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(_radius),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(35),
-            blurRadius: 30,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_radius),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Fundo: a mesma foto ampliada e desfocada
-            ExcludeSemantics(
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(
-                  sigmaX: 40,
-                  sigmaY: 40,
-                  tileMode: TileMode.mirror,
-                ),
-                child: FittedBox(fit: BoxFit.cover, child: _art()),
+    return Center(
+      child: AspectRatio(
+        aspectRatio:
+            _WelcomeDesktopState._artWidth /
+            (_WelcomeDesktopState._artHeight *
+                _WelcomeDesktopState._artVisibleFraction),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(_radius),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(35),
+                blurRadius: 30,
+                offset: const Offset(0, 14),
               ),
-            ),
-            // Foto inteira no centro, com as laterais esmaecendo no fundo
-            Semantics(
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_radius),
+            child: Semantics(
               label: 'Orelinhas. Mais que um app, uma ponte para o reencontro.',
               image: true,
-              child: LayoutBuilder(
-                builder: (context, box) {
-                  // Largura que a foto ocupa (fração do painel) para o
-                  // esmaecimento começar exatamente nas bordas dela.
-                  const aspect =
-                      _WelcomeDesktopState._artWidth /
-                      (_WelcomeDesktopState._artHeight *
-                          _WelcomeDesktopState._artVisibleFraction);
-                  final f = (box.maxHeight * aspect / box.maxWidth).clamp(
-                    0.0,
-                    1.0,
-                  );
-                  final edge = (1 - f) / 2;
-                  final fade = f * 0.15;
-                  return ShaderMask(
-                    blendMode: BlendMode.dstIn,
-                    shaderCallback: (rect) => LinearGradient(
-                      colors: const [
-                        Colors.transparent,
-                        Colors.transparent,
-                        Colors.black,
-                        Colors.black,
-                        Colors.transparent,
-                        Colors.transparent,
-                      ],
-                      stops: [
-                        0,
-                        edge + 0.004,
-                        edge + fade,
-                        1 - edge - fade,
-                        1 - edge - 0.004,
-                        1,
-                      ],
-                    ).createShader(rect),
-                    child: FittedBox(fit: BoxFit.contain, child: _art()),
-                  );
-                },
+              child: FittedBox(
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    heightFactor: _WelcomeDesktopState._artVisibleFraction,
+                    child: Image.asset(
+                      'assets/images/welcome.webp',
+                      width: _WelcomeDesktopState._artWidth,
+                      height: _WelcomeDesktopState._artHeight,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
