@@ -122,90 +122,134 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
                 ],
               ),
             )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_targetPet != null) _buildQueryPetCard(_targetPet!),
-                  const SizedBox(height: 14),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: const Text('Executar nova busca ativa'),
-                    onPressed: matchState.isLoading || _targetPet == null
-                        ? null
-                        : () {
-                            ref
-                                .read(petMatchControllerProvider.notifier)
-                                .runNewSearch(pet: _targetPet!);
-                          },
-                  ),
-                  const SizedBox(height: 14),
-                  _buildHumanVerificationNotice(),
-                  const SizedBox(height: 22),
-                  Text(
-                    'Resultados encontrados (${matchState.matches.length})',
-                    style: AppTextStyles.sectionHeader(),
-                  ),
-                  const SizedBox(height: 12),
-                  if (matchState.matches.isEmpty)
-                    const EmptyState(
-                      icon: Icons.search_off_rounded,
-                      title: 'Nenhuma correspondência encontrada',
-                      message:
-                          'Aguarde novos cadastros na rede ou execute uma nova busca mais tarde.',
-                    )
-                  else ...[
-                    if (widget.initialHighlightPetId != null &&
-                        matchState.matches.any(
-                          (m) =>
-                              m.matchedPet.id == widget.initialHighlightPetId,
-                        ))
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primarySoft,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.auto_awesome_rounded,
-                              color: AppColors.primary,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Exibindo em destaque a correspondência que gerou a notificação.',
-                                style: AppTextStyles.bodySmall(
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _getSortedMatches(matchState.matches).length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 14),
-                      itemBuilder: (context, index) {
-                        final candidate = _getSortedMatches(
-                          matchState.matches,
-                        )[index];
-                        return _buildMatchCandidateCard(candidate);
-                      },
-                    ),
-                  ],
-                ],
-              ),
+          : _buildBody(context, matchState),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, PetMatchState matchState) {
+    final isDesktop = MediaQuery.sizeOf(context).width >= 900;
+    final matches = matchState.matches;
+    final sorted = _getSortedMatches(matches);
+
+    // Pet buscado, nova busca e aviso de análise humana
+    final searchPanel = <Widget>[
+      if (_targetPet != null) _buildQueryPetCard(_targetPet!),
+      const SizedBox(height: 14),
+      OutlinedButton.icon(
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('Executar nova busca ativa'),
+        onPressed: matchState.isLoading || _targetPet == null
+            ? null
+            : () {
+                ref
+                    .read(petMatchControllerProvider.notifier)
+                    .runNewSearch(pet: _targetPet!);
+              },
+      ),
+      const SizedBox(height: 14),
+      _buildHumanVerificationNotice(),
+    ];
+
+    final highlightBanner =
+        widget.initialHighlightPetId != null &&
+            matches.any((m) => m.matchedPet.id == widget.initialHighlightPetId)
+        ? Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(14),
             ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: AppColors.primary,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Exibindo em destaque a correspondência que gerou a notificação.',
+                    style: AppTextStyles.bodySmall(color: AppColors.primary),
+                  ),
+                ),
+              ],
+            ),
+          )
+        : null;
+
+    final results = <Widget>[
+      Text(
+        'Resultados encontrados (${matches.length})',
+        style: AppTextStyles.sectionHeader().copyWith(fontSize: 18),
+      ),
+      const SizedBox(height: 12),
+      if (matches.isEmpty)
+        const EmptyState(
+          icon: Icons.search_off_rounded,
+          title: 'Nenhuma correspondência encontrada',
+          message:
+              'Aguarde novos cadastros na rede ou execute uma nova busca mais tarde.',
+        )
+      else ...[
+        ?highlightBanner,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // 2 colunas quando há espaço (PC), 1 no celular
+            final columns = constraints.maxWidth >= 640 ? 2 : 1;
+            const gap = 14.0;
+            final width =
+                (constraints.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final c in sorted)
+                  SizedBox(width: width, child: _buildMatchCandidateCard(c)),
+              ],
+            );
+          },
+        ),
+      ],
+    ];
+
+    if (isDesktop) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(40, 8, 40, 36),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1120),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 340,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: searchPanel,
+                  ),
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: results,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [...searchPanel, const SizedBox(height: 22), ...results],
+      ),
     );
   }
 
@@ -215,6 +259,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
@@ -257,6 +302,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,7 +352,7 @@ class _PetMatchResultsScreenState extends ConsumerState<PetMatchResultsScreen> {
         borderRadius: BorderRadius.circular(20),
         border: isHighlighted
             ? Border.all(color: AppColors.primary, width: 1.8)
-            : null,
+            : Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
