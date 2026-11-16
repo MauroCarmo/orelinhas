@@ -47,6 +47,8 @@ class AppShell extends StatelessWidget {
     const tabs = [
       AppRoutes.home,
       AppRoutes.petLost,
+      AppRoutes.petFound,
+      AppRoutes.petAdoption,
       AppRoutes.petLostMap,
       AppRoutes.profile,
       AppRoutes.notifications,
