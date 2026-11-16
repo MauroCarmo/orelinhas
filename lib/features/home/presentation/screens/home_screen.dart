@@ -125,44 +125,25 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Recorte da arte do Orelinhas com o cachorro e o gato (sem o logo).
-class _DogAndCatPhoto extends StatelessWidget {
-  final Alignment alignment;
+/// Foto do banner: pessoa abraçando o cachorro reencontrado no parque.
+class _BannerPhoto extends StatelessWidget {
+  const _BannerPhoto();
 
-  const _DogAndCatPhoto({this.alignment = Alignment.center});
-
-  // Faixa da arte original (720x1280) que mostra só os dois animais.
-  static const double _top = 560;
-  static const double _bottom = 1010;
-  static const double _height = 1280;
+  /// Proporção da imagem (1200x600).
+  static const double aspect = 2;
 
   @override
   Widget build(BuildContext context) {
-    const visible = (_bottom - _top) / _height;
-    const alignY = 2 * _top / (_height - (_bottom - _top)) - 1;
-    return ExcludeSemantics(
-      child: FittedBox(
-        fit: BoxFit.cover,
-        alignment: alignment,
-        clipBehavior: Clip.hardEdge,
-        child: ClipRect(
-          child: Align(
-            alignment: const Alignment(0, alignY),
-            heightFactor: visible,
-            child: Image.asset(
-              'assets/images/welcome.webp',
-              width: 720,
-              height: _height,
-            ),
-          ),
-        ),
-      ),
+    return Image.asset(
+      'assets/images/home_banner.webp',
+      fit: BoxFit.cover,
+      semanticLabel: 'Pessoa abraçando um cachorro num parque',
     );
   }
 }
 
 /// Banner dividido: texto sobre fundo branco e a foto ao lado (PC) ou em
-/// cima (celular). Sem degradê, então não há emenda entre cor e imagem.
+/// cima (celular), sempre inteira. Sem degradê, sem emenda entre cor e foto.
 class _HeroCard extends StatelessWidget {
   const _HeroCard();
 
@@ -246,10 +227,11 @@ class _HeroCard extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(flex: 5, child: text),
-                      const Expanded(
-                        flex: 4,
-                        child: _DogAndCatPhoto(alignment: Alignment(0, -0.4)),
+                      Expanded(child: text),
+                      // Foto na proporção dela (2:1), então aparece inteira
+                      const AspectRatio(
+                        aspectRatio: _BannerPhoto.aspect,
+                        child: _BannerPhoto(),
                       ),
                     ],
                   ),
@@ -257,9 +239,9 @@ class _HeroCard extends StatelessWidget {
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SizedBox(
-                      height: 150,
-                      child: _DogAndCatPhoto(alignment: Alignment(0, -0.5)),
+                    const AspectRatio(
+                      aspectRatio: _BannerPhoto.aspect,
+                      child: _BannerPhoto(),
                     ),
                     text,
                   ],
