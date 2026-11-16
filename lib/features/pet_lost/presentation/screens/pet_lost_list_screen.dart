@@ -298,7 +298,7 @@ class _PetLostListScreenState extends ConsumerState<PetLostListScreen> {
         return RefreshIndicator(
           onRefresh: () async => _refresh(),
           child: GridView.builder(
-            padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 88),
+            padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 32),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 240,
               mainAxisSpacing: 16,
@@ -463,17 +463,6 @@ class _PetLostListScreenState extends ConsumerState<PetLostListScreen> {
                 : grid,
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRoutes.petLostCreate),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
-        icon: const Icon(Icons.add_rounded),
-        label: Text(
-          'Novo alerta',
-          style: AppTextStyles.button(color: Colors.white),
-        ),
       ),
     );
   }

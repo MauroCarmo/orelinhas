@@ -355,17 +355,6 @@ class _PetAdoptionListScreenState extends ConsumerState<PetAdoptionListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRoutes.petAdoptionCreate),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
-        icon: const Icon(Icons.add_rounded),
-        label: Text(
-          'Anunciar Adoção',
-          style: AppTextStyles.button(color: Colors.white),
-        ),
-      ),
     );
   }
 }
