@@ -58,4 +58,7 @@ class AppRoutes {
 
   // Rota para canais de denúncia de maus-tratos
   static const String reportAbuse = '/report-abuse';
+
+  // Página institucional "Sobre o Orelinhas"
+  static const String about = '/about';
 }

@@ -26,22 +26,88 @@ class ProfileRepository {
           .select()
           .eq('id', id)
           .single();
-      _logger.i('Perfil de usuário obtido com sucesso.', context: {'userId': id});
+      _logger.i(
+        'Perfil de usuário obtido com sucesso.',
+        context: {'userId': id},
+      );
       return ProfileEntity.fromJson(data);
     } catch (e, st) {
-      _logger.e('Falha técnica ao obter perfil de usuário.', error: e, stackTrace: st, context: {'userId': id});
+      _logger.e(
+        'Falha técnica ao obter perfil de usuário.',
+        error: e,
+        stackTrace: st,
+        context: {'userId': id},
+      );
+      throw AppErrorMapper.map(e, st);
+    }
+  }
+
+  /// Busca o perfil do usuário logado. Retorna `null` quando o perfil ainda
+  /// não existe (ex.: conta criada sem passar pelo cadastro completo).
+  Future<ProfileEntity?> findProfile(String id) async {
+    _logger.i('Buscando perfil (pode não existir).', context: {'userId': id});
+    try {
+      final data = await _supabase
+          .from('profiles')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      if (data == null) {
+        _logger.i(
+          'Perfil ainda não existe para o usuário.',
+          context: {'userId': id},
+        );
+        return null;
+      }
+      return ProfileEntity.fromJson(data);
+    } catch (e, st) {
+      _logger.e(
+        'Falha técnica ao buscar perfil de usuário.',
+        error: e,
+        stackTrace: st,
+        context: {'userId': id},
+      );
+      throw AppErrorMapper.map(e, st);
+    }
+  }
+
+  /// Cria o perfil do usuário logado (primeiro salvamento).
+  Future<void> createProfile(ProfileEntity profile) async {
+    _logger.i('Criando perfil do usuário.', context: {'userId': profile.id});
+
+    final validationError = profile.validate();
+    if (validationError != null) {
+      throw ValidationException(validationError);
+    }
+
+    try {
+      await _supabase.from('profiles').insert(profile.toJson());
+      _logger.i('Perfil criado com sucesso.', context: {'userId': profile.id});
+    } catch (e, st) {
+      _logger.e(
+        'Falha técnica ao criar o perfil.',
+        error: e,
+        stackTrace: st,
+        context: {'userId': profile.id},
+      );
       throw AppErrorMapper.map(e, st);
     }
   }
 
   /// Atualiza os dados do perfil de usuário na tabela do banco de dados.
   Future<void> updateProfile(ProfileEntity profile) async {
-    _logger.i('Iniciando atualização de perfil.', context: {'userId': profile.id});
-    
+    _logger.i(
+      'Iniciando atualização de perfil.',
+      context: {'userId': profile.id},
+    );
+
     // 1. Validação estrita de negócio no nível de domínio/repositório (Defesa em Profundidade)
     final validationError = profile.validate();
     if (validationError != null) {
-      _logger.w('Validação de domínio falhou no repositório.', context: {'userId': profile.id, 'erro': validationError});
+      _logger.w(
+        'Validação de domínio falhou no repositório.',
+        context: {'userId': profile.id, 'erro': validationError},
+      );
       throw ValidationException(validationError);
     }
 
@@ -50,9 +116,17 @@ class ProfileRepository {
           .from('profiles')
           .update(profile.toJson())
           .eq('id', profile.id);
-      _logger.i('Perfil de usuário atualizado no Supabase com sucesso.', context: {'userId': profile.id});
+      _logger.i(
+        'Perfil de usuário atualizado no Supabase com sucesso.',
+        context: {'userId': profile.id},
+      );
     } catch (e, st) {
-      _logger.e('Falha técnica ao atualizar o perfil na tabela.', error: e, stackTrace: st, context: {'userId': profile.id});
+      _logger.e(
+        'Falha técnica ao atualizar o perfil na tabela.',
+        error: e,
+        stackTrace: st,
+        context: {'userId': profile.id},
+      );
       throw AppErrorMapper.map(e, st);
     }
   }
@@ -61,15 +135,26 @@ class ProfileRepository {
   Future<void> deleteAccount() async {
     final user = _supabase.auth.currentUser;
     final userId = user?.id ?? 'desconhecido';
-    
-    _logger.w('Iniciando exclusão permanente de conta de usuário.', context: {'userId': userId});
+
+    _logger.w(
+      'Iniciando exclusão permanente de conta de usuário.',
+      context: {'userId': userId},
+    );
     try {
       await _supabase.rpc('delete_own_user');
       // Limpa a sessão local após exclusão
       await _supabase.auth.signOut();
-      _logger.i('Conta de usuário excluída e sessão encerrada com sucesso.', context: {'userId': userId});
+      _logger.i(
+        'Conta de usuário excluída e sessão encerrada com sucesso.',
+        context: {'userId': userId},
+      );
     } catch (e, st) {
-      _logger.e('Falha crítica ao excluir conta de usuário via RPC.', error: e, stackTrace: st, context: {'userId': userId});
+      _logger.e(
+        'Falha crítica ao excluir conta de usuário via RPC.',
+        error: e,
+        stackTrace: st,
+        context: {'userId': userId},
+      );
       throw AppErrorMapper.map(e, st);
     }
   }

@@ -28,6 +28,7 @@ import '../../features/pet_lost/domain/pet_lost_entity.dart';
 import '../../features/pet_adoption/domain/pet_adoption_entity.dart';
 import '../../features/pet_found/domain/pet_found_entity.dart';
 import '../../features/welcome/presentation/screens/welcome_screen.dart';
+import '../../features/about/presentation/screens/about_screen.dart';
 import '../widgets/app_shell.dart';
 import 'app_routes.dart';
 
@@ -153,6 +154,16 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: ProfileScreen()),
           ),
+          GoRoute(
+            path: AppRoutes.notifications,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: NotificationListScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.about,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: AboutScreen()),
+          ),
         ],
       ),
 
@@ -232,10 +243,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id']!;
           return CreatePetAdoptionScreen(alertId: id);
         },
-      ),
-      GoRoute(
-        path: AppRoutes.notifications,
-        builder: (context, state) => const NotificationListScreen(),
       ),
       GoRoute(
         path: AppRoutes.reportAbuse,

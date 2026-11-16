@@ -20,7 +20,7 @@ class NotificationBadgeButton extends ConsumerWidget {
           icon: const Icon(Icons.notifications_outlined),
           tooltip: 'Notificações',
           onPressed: () {
-            context.push(AppRoutes.notifications);
+            context.go(AppRoutes.notifications);
           },
         ),
         if (unreadCount > 0)

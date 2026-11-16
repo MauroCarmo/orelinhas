@@ -6,14 +6,20 @@ import '../../../../core/logger/app_logger.dart';
 import '../../../../features/auth/presentation/controllers/auth_controller.dart';
 import '../../data/profile_repository.dart';
 import '../../domain/profile_entity.dart';
+import '../../../../core/domain/address/address_entity.dart';
 
-final profileControllerProvider = AsyncNotifierProvider<ProfileController, ProfileEntity?>(() {
-  return ProfileController();
-});
+final profileControllerProvider =
+    AsyncNotifierProvider<ProfileController, ProfileEntity?>(() {
+      return ProfileController();
+    });
 
 class ProfileController extends AsyncNotifier<ProfileEntity?> {
   late ProfileRepository _repository;
   final _logger = AppLogger.category('ProfileController');
+
+  /// `true` quando a conta ainda não tem perfil salvo: a tela mostra um
+  /// rascunho com os dados da conta e o primeiro "Salvar" cria o perfil.
+  bool isNewProfile = false;
 
   @override
   FutureOr<ProfileEntity?> build() async {
@@ -25,10 +31,40 @@ class ProfileController extends AsyncNotifier<ProfileEntity?> {
     }
 
     try {
-      return await _repository.getProfile(user.id);
+      final profile = await _repository.findProfile(user.id);
+      if (profile != null) {
+        isNewProfile = false;
+        return profile;
+      }
+
+      // Sem perfil salvo: monta um rascunho com os dados da conta.
+      isNewProfile = true;
+      final metadata = user.userMetadata ?? const {};
+      return ProfileEntity(
+        id: user.id,
+        name: ((metadata['name'] ?? metadata['full_name']) as String? ?? '')
+            .trim(),
+        email: user.email ?? '',
+        phone: (metadata['phone'] as String?) ?? '',
+        location: (metadata['location'] as String?) ?? '',
+        address: const AddressEntity(
+          cep: '',
+          street: '',
+          number: '',
+          district: '',
+          city: '',
+          state: '',
+        ),
+        avatarUrl: metadata['avatar_url'] as String?,
+      );
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro ao buscar perfil inicial no ProfileController.', error: appException, stackTrace: st, context: {'userId': user.id});
+      _logger.e(
+        'Erro ao buscar perfil inicial no ProfileController.',
+        error: appException,
+        stackTrace: st,
+        context: {'userId': user.id},
+      );
       // Propaga o erro de inicialização de forma limpa para a UI tratar
       throw appException;
     }
@@ -48,11 +84,21 @@ class ProfileController extends AsyncNotifier<ProfileEntity?> {
         throw ValidationException(validationError);
       }
 
-      await _repository.updateProfile(profile);
+      if (isNewProfile) {
+        await _repository.createProfile(profile);
+        isNewProfile = false;
+      } else {
+        await _repository.updateProfile(profile);
+      }
       state = AsyncData(profile);
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro ao atualizar perfil no ProfileController.', error: appException, stackTrace: st, context: {'userId': profile.id});
+      _logger.e(
+        'Erro ao atualizar perfil no ProfileController.',
+        error: appException,
+        stackTrace: st,
+        context: {'userId': profile.id},
+      );
       state = AsyncError(appException, st);
     }
   }
@@ -66,13 +112,18 @@ class ProfileController extends AsyncNotifier<ProfileEntity?> {
     state = const AsyncLoading();
     final user = ref.read(currentUserProvider);
     final userId = user?.id ?? 'desconhecido';
-    
+
     try {
       await _repository.deleteAccount();
       state = const AsyncData(null);
     } catch (e, st) {
       final appException = AppErrorMapper.map(e, st);
-      _logger.e('Erro crítico ao excluir conta no ProfileController.', error: appException, stackTrace: st, context: {'userId': userId});
+      _logger.e(
+        'Erro crítico ao excluir conta no ProfileController.',
+        error: appException,
+        stackTrace: st,
+        context: {'userId': userId},
+      );
       state = AsyncError(appException, st);
     }
   }

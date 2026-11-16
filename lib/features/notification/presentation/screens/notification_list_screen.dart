@@ -131,13 +131,9 @@ class NotificationListScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          tooltip: 'Voltar',
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go(AppRoutes.home),
-        ),
-        title: const Text('Notificações'),
+        // Aba principal (Avisos): sem botão de voltar
+        automaticallyImplyLeading: false,
+        title: const Text('Avisos'),
         actions: [
           if (unreadCount > 0)
             TextButton.icon(

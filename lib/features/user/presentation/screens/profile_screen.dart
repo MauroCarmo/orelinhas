@@ -288,6 +288,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _confirmSignOut() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sair da conta?'),
+        content: const Text(
+          'Você poderá entrar novamente a qualquer momento com seu e-mail e senha.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Sair'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      await ref.read(authControllerProvider.notifier).signOut();
+    }
+  }
+
   Future<void> _confirmDeleteAccount() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -351,23 +376,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          tooltip: 'Voltar',
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go(AppRoutes.home),
-        ),
+        // Aba principal (Perfil): sem botão de voltar
+        automaticallyImplyLeading: false,
         title: const Text('Minha Conta'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: () {
-              ref.read(authControllerProvider.notifier).signOut();
-            },
-            tooltip: 'Sair da conta',
-          ),
-          const SizedBox(width: 4),
-        ],
       ),
       body: profileState.when(
         data: (profile) {
@@ -390,6 +401,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (ref
+                      .read(profileControllerProvider.notifier)
+                      .isNewProfile) ...[
+                    const _CompleteProfileBanner(),
+                    const SizedBox(height: 14),
+                  ],
                   // Cabeçalho com avatar
                   _SectionCard(
                     child: Row(
@@ -509,11 +526,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                         const Divider(height: 1, indent: 56),
                         _MenuTile(
+                          icon: Icons.info_outline_rounded,
+                          title: 'Sobre o Orelinhas',
+                          onTap: () => context.go(AppRoutes.about),
+                        ),
+                        const Divider(height: 1, indent: 56),
+                        _MenuTile(
                           icon: Icons.logout_rounded,
                           title: 'Sair da conta',
-                          onTap: () => ref
-                              .read(authControllerProvider.notifier)
-                              .signOut(),
+                          onTap: _confirmSignOut,
                         ),
                       ],
                     ),
@@ -861,6 +882,46 @@ class _MenuTile extends StatelessWidget {
         color: AppColors.textSecondary,
       ),
       onTap: onTap,
+    );
+  }
+}
+
+/// Aviso exibido quando a conta ainda não tem perfil salvo.
+class _CompleteProfileBanner extends StatelessWidget {
+  const _CompleteProfileBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    const orange = Color(0xFFD9822B);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF0DF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF3CF9C)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.badge_outlined, color: orange, size: 26),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Complete seu perfil', style: AppTextStyles.heading3()),
+                const SizedBox(height: 4),
+                Text(
+                  'Sua conta ainda não tem um perfil salvo. Confira seus dados, '
+                  'preencha telefone e endereço e toque em "Salvar". Assim quem '
+                  'encontrar seu pet consegue falar com você.',
+                  style: AppTextStyles.bodySmall(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
