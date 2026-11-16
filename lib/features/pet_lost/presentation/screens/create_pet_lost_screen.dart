@@ -968,31 +968,30 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     );
 
     if (isDesktop) {
+      // Fotos em cima e "Sobre o pet" logo abaixo
       return _stepBody(isDesktop: true, [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        _buildMultiImagePicker(isLoading, wide: true),
+        const SizedBox(height: 20),
+        _card(
+          title: 'Sobre o pet',
+          subtitle: 'Essas informações aparecem no alerta.',
           children: [
-            SizedBox(width: 400, child: _buildMultiImagePicker(isLoading)),
-            const SizedBox(width: 20),
-            Expanded(
-              child: _card(
-                title: 'Sobre o pet',
-                subtitle: 'Essas informações aparecem no alerta.',
-                children: [
-                  nameField,
-                  const SizedBox(height: 18),
-                  speciesField,
-                  const SizedBox(height: 18),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: breedField),
-                      const SizedBox(width: 12),
-                      Expanded(child: ageField),
-                    ],
-                  ),
-                ],
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: nameField),
+                const SizedBox(width: 16),
+                Expanded(child: speciesField),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: breedField),
+                const SizedBox(width: 16),
+                Expanded(child: ageField),
+              ],
             ),
           ],
         ),
@@ -1444,7 +1443,8 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
     ]);
   }
 
-  Widget _buildMultiImagePicker(bool isLoading) {
+  /// [wide]: no PC as fotos ficam mais baixas (formato paisagem).
+  Widget _buildMultiImagePicker(bool isLoading, {bool wide = false}) {
     final canAddMore = _photos.length < _maxPhotos;
 
     return Container(
@@ -1471,11 +1471,11 @@ class _CreatePetLostScreenState extends ConsumerState<CreatePetLostScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: _maxPhotos,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              crossAxisSpacing: 8,
+              crossAxisSpacing: wide ? 12 : 8,
               mainAxisSpacing: 8,
-              childAspectRatio: 0.9,
+              childAspectRatio: wide ? 1.6 : 0.9,
             ),
             itemBuilder: (context, index) {
               if (index < _photos.length) {
