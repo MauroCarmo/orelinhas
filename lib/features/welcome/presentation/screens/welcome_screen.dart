@@ -3,10 +3,31 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/orelinhas_logo.dart';
+import '../widgets/welcome_desktop.dart';
 
 /// Tela de entrada do app, exibida antes do login.
+///
+/// No celular mostra a arte com os botões "Começar" e "Já tenho uma conta".
+/// Em telas largas (PC) mostra a arte ao lado de um painel com login e
+/// cadastro, sem precisar trocar de página.
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
+
+  /// A partir desta largura usa o layout de PC.
+  static const double desktopBreakpoint = 900;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return width >= desktopBreakpoint
+        ? const WelcomeDesktop()
+        : const _MobileWelcome();
+  }
+}
+
+/// Layout do celular (inalterado).
+class _MobileWelcome extends StatelessWidget {
+  const _MobileWelcome();
 
   /// Altura útil da arte (a parte de baixo da imagem original é coberta
   /// pelo painel de ações).

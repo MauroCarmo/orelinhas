@@ -11,21 +11,78 @@ import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/auth_layout.dart';
 
-class RegisterScreen extends ConsumerStatefulWidget {
+/// Tela de cadastro (usada no celular e quando a rota /register é aberta
+/// direto).
+class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
   @override
-  ConsumerState<RegisterScreen> createState() => _RegisterScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _RegisterScreenState extends ConsumerState<RegisterScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
+  bool _registrationSuccess = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_registrationSuccess) {
+      return AuthConfirmation(
+        icon: Icons.mark_email_unread_outlined,
+        title: 'Confirme seu e-mail',
+        message: RegisterForm.confirmationMessage,
+        actionLabel: 'Ir para o login',
+        onAction: () => context.go('/login'),
+      );
+    }
+
+    return AuthLayout(
+      title: 'Crie sua conta',
+      subtitle: RegisterForm.subtitle,
+      showLogo: false,
+      children: [
+        RegisterForm(
+          onRegistered: () => setState(() => _registrationSuccess = true),
+        ),
+      ],
+    );
+  }
+}
+
+/// Campos e ações do cadastro. Reaproveitado na tela de boas-vindas do PC.
+class RegisterForm extends ConsumerStatefulWidget {
+  static const String subtitle =
+      'Leva menos de um minuto. Seus dados ajudam quem encontrar um pet a falar com você.';
+  static const String confirmationMessage =
+      'Enviamos um link de confirmação para o seu e-mail. Abra o link para ativar sua conta e depois entre no app.';
+
+  /// Chamado quando o cadastro é concluído com sucesso.
+  final VoidCallback onRegistered;
+
+  /// Quando informado, "Entrar" chama este callback em vez de navegar
+  /// para a rota de login (usado no painel do PC).
+  final VoidCallback? onLogin;
+
+  /// Coloca telefone e cidade lado a lado (telas largas).
+  final bool wide;
+
+  const RegisterForm({
+    super.key,
+    required this.onRegistered,
+    this.onLogin,
+    this.wide = false,
+  });
+
+  @override
+  ConsumerState<RegisterForm> createState() => _RegisterFormState();
+}
+
+class _RegisterFormState extends ConsumerState<RegisterForm> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
-  bool _registrationSuccess = false;
   bool _obscurePassword = true;
 
   @override
@@ -72,9 +129,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         SnackBar(content: Text(errorMessage), backgroundColor: AppColors.error),
       );
     } else {
-      setState(() {
-        _registrationSuccess = true;
-      });
+      widget.onRegistered();
     }
   }
 
@@ -83,152 +138,151 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading;
 
-    if (_registrationSuccess) {
-      return AuthConfirmation(
-        icon: Icons.mark_email_unread_outlined,
-        title: 'Confirme seu e-mail',
-        message:
-            'Enviamos um link de confirmação para o seu e-mail. Abra o link para ativar sua conta e depois entre no app.',
-        actionLabel: 'Ir para o login',
-        onAction: () => context.go('/login'),
-      );
-    }
-
-    return AuthLayout(
-      title: 'Crie sua conta',
-      subtitle:
-          'Leva menos de um minuto. Seus dados ajudam quem encontrar um pet a falar com você.',
-      showLogo: false,
+    final phoneField = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        const FieldLabel('Telefone'),
+        TextFormField(
+          controller: _phoneController,
+          decoration: AppInputDecoration.defaultDecoration(
+            labelText: '',
+            hintText: '(11) 99999-9999',
+            prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+          ),
+          keyboardType: TextInputType.phone,
+          inputFormatters: [PhoneInputFormatter()],
+          validator: AppValidators.combine([
+            AppValidators.required('Telefone'),
+            AppValidators.phone(),
+          ]),
+        ),
+      ],
+    );
+    final locationField = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const FieldLabel('Cidade / Estado'),
+        TextFormField(
+          controller: _locationController,
+          decoration: AppInputDecoration.defaultDecoration(
+            labelText: '',
+            hintText: 'São Paulo - SP',
+            prefixIcon: const Icon(Icons.place_outlined, size: 20),
+          ),
+          validator: AppValidators.combine([
+            AppValidators.required('Cidade / Estado'),
+            AppValidators.maxLength(150, 'Cidade / Estado'),
+          ]),
+        ),
+      ],
+    );
+
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const FieldLabel('Nome completo'),
+          TextFormField(
+            controller: _nameController,
+            decoration: AppInputDecoration.defaultDecoration(
+              labelText: '',
+              hintText: 'Como você se chama?',
+              prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
+            ),
+            textCapitalization: TextCapitalization.words,
+            validator: AppValidators.combine([
+              AppValidators.required('Nome Completo'),
+              AppValidators.maxLength(100, 'Nome Completo'),
+            ]),
+          ),
+          const SizedBox(height: 18),
+
+          const FieldLabel('E-mail'),
+          TextFormField(
+            controller: _emailController,
+            decoration: AppInputDecoration.defaultDecoration(
+              labelText: '',
+              hintText: 'seuemail@exemplo.com',
+              prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            validator: AppValidators.combine([
+              AppValidators.required('E-mail'),
+              AppValidators.maxLength(80, 'E-mail'),
+              AppValidators.email(),
+            ]),
+          ),
+          const SizedBox(height: 18),
+
+          if (widget.wide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: phoneField),
+                const SizedBox(width: 14),
+                Expanded(child: locationField),
+              ],
+            )
+          else ...[
+            phoneField,
+            const SizedBox(height: 18),
+            locationField,
+          ],
+          const SizedBox(height: 18),
+
+          const FieldLabel('Senha'),
+          TextFormField(
+            controller: _passwordController,
+            decoration: AppInputDecoration.defaultDecoration(
+              labelText: '',
+              hintText: 'Mínimo de 8 caracteres',
+              helperText:
+                  'Use maiúscula, minúscula, número e um símbolo (@\$!%*?&.)',
+              prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+              suffixIcon: IconButton(
+                tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 20,
+                ),
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+              ),
+            ),
+            obscureText: _obscurePassword,
+            validator: AppValidators.combine([
+              AppValidators.required('Senha'),
+              AppValidators.passwordComplexity(),
+            ]),
+          ),
+          const SizedBox(height: 32),
+
+          ElevatedButton(
+            style: AppButtonStyles.primary(),
+            onPressed: isLoading ? null : _register,
+            child: isLoading
+                ? const ButtonSpinner()
+                : const Text('Criar conta'),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const FieldLabel('Nome completo'),
-              TextFormField(
-                controller: _nameController,
-                decoration: AppInputDecoration.defaultDecoration(
-                  labelText: '',
-                  hintText: 'Como você se chama?',
-                  prefixIcon: const Icon(
-                    Icons.person_outline_rounded,
-                    size: 20,
-                  ),
-                ),
-                textCapitalization: TextCapitalization.words,
-                validator: AppValidators.combine([
-                  AppValidators.required('Nome Completo'),
-                  AppValidators.maxLength(100, 'Nome Completo'),
-                ]),
+              Text(
+                'Já tem conta?',
+                style: AppTextStyles.body(color: AppColors.textSecondary),
               ),
-              const SizedBox(height: 18),
-
-              const FieldLabel('E-mail'),
-              TextFormField(
-                controller: _emailController,
-                decoration: AppInputDecoration.defaultDecoration(
-                  labelText: '',
-                  hintText: 'seuemail@exemplo.com',
-                  prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: AppValidators.combine([
-                  AppValidators.required('E-mail'),
-                  AppValidators.maxLength(80, 'E-mail'),
-                  AppValidators.email(),
-                ]),
-              ),
-              const SizedBox(height: 18),
-
-              const FieldLabel('Telefone'),
-              TextFormField(
-                controller: _phoneController,
-                decoration: AppInputDecoration.defaultDecoration(
-                  labelText: '',
-                  hintText: '(11) 99999-9999',
-                  prefixIcon: const Icon(Icons.phone_outlined, size: 20),
-                ),
-                keyboardType: TextInputType.phone,
-                inputFormatters: [PhoneInputFormatter()],
-                validator: AppValidators.combine([
-                  AppValidators.required('Telefone'),
-                  AppValidators.phone(),
-                ]),
-              ),
-              const SizedBox(height: 18),
-
-              const FieldLabel('Cidade / Estado'),
-              TextFormField(
-                controller: _locationController,
-                decoration: AppInputDecoration.defaultDecoration(
-                  labelText: '',
-                  hintText: 'São Paulo - SP',
-                  prefixIcon: const Icon(Icons.place_outlined, size: 20),
-                ),
-                validator: AppValidators.combine([
-                  AppValidators.required('Cidade / Estado'),
-                  AppValidators.maxLength(150, 'Cidade / Estado'),
-                ]),
-              ),
-              const SizedBox(height: 18),
-
-              const FieldLabel('Senha'),
-              TextFormField(
-                controller: _passwordController,
-                decoration: AppInputDecoration.defaultDecoration(
-                  labelText: '',
-                  hintText: 'Mínimo de 8 caracteres',
-                  helperText:
-                      'Use maiúscula, minúscula, número e um símbolo (@\$!%*?&.)',
-                  prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
-                  suffixIcon: IconButton(
-                    tooltip: _obscurePassword
-                        ? 'Mostrar senha'
-                        : 'Ocultar senha',
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                  ),
-                ),
-                obscureText: _obscurePassword,
-                validator: AppValidators.combine([
-                  AppValidators.required('Senha'),
-                  AppValidators.passwordComplexity(),
-                ]),
-              ),
-              const SizedBox(height: 32),
-
-              ElevatedButton(
-                style: AppButtonStyles.primary(),
-                onPressed: isLoading ? null : _register,
-                child: isLoading
-                    ? const ButtonSpinner()
-                    : const Text('Criar conta'),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Já tem conta?',
-                    style: AppTextStyles.body(color: AppColors.textSecondary),
-                  ),
-                  TextButton(
-                    onPressed: () => context.go('/login'),
-                    child: const Text('Entrar'),
-                  ),
-                ],
+              TextButton(
+                onPressed: widget.onLogin ?? () => context.go('/login'),
+                child: const Text('Entrar'),
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

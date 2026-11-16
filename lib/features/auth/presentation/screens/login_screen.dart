@@ -9,14 +9,34 @@ import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/auth_layout.dart';
 
-class LoginScreen extends ConsumerStatefulWidget {
+/// Tela de login (usada no celular e quando a rota /login é aberta direto).
+class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  Widget build(BuildContext context) {
+    return const AuthLayout(
+      title: 'Que bom te ver de novo',
+      subtitle:
+          'Entre para acompanhar seus alertas e ajudar pets perto de você.',
+      children: [LoginForm()],
+    );
+  }
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+/// Campos e ações do login. Reaproveitado na tela de boas-vindas do PC.
+class LoginForm extends ConsumerStatefulWidget {
+  /// Quando informado, "Criar conta" chama este callback em vez de navegar
+  /// para a rota de cadastro (usado no painel do PC).
+  final VoidCallback? onCreateAccount;
+
+  const LoginForm({super.key, this.onCreateAccount});
+
+  @override
+  ConsumerState<LoginForm> createState() => _LoginFormState();
+}
+
+class _LoginFormState extends ConsumerState<LoginForm> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
@@ -60,10 +80,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading;
 
-    return AuthLayout(
-      title: 'Que bom te ver de novo',
-      subtitle:
-          'Entre para acompanhar seus alertas e ajudar pets perto de você.',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
         const FieldLabel('E-mail'),
         TextField(
@@ -143,7 +162,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               style: AppTextStyles.body(color: AppColors.textSecondary),
             ),
             TextButton(
-              onPressed: () => context.push('/register'),
+              onPressed:
+                  widget.onCreateAccount ?? () => context.push('/register'),
               child: const Text('Criar conta'),
             ),
           ],
