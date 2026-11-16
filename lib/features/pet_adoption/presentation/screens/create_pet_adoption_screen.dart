@@ -200,7 +200,7 @@ class _CreatePetAdoptionScreenState
     final digits = contactText.replaceAll(RegExp(r'\D'), '');
     if (digits.length < 10 || digits.length > 11) {
       _showErrorDialog(context, [
-        'O telefone de contato é obrigatório e deve ter DDD + número válido (10 ou 11 dígitos).'
+        'O telefone de contato é obrigatório e deve ter DDD + número válido (10 ou 11 dígitos).',
       ]);
       return;
     }
@@ -232,7 +232,10 @@ class _CreatePetAdoptionScreenState
     try {
       final profileState = ref.read(profileControllerProvider).value;
       if (profileState != null) {
-        final currentPhoneDigits = profileState.phone.replaceAll(RegExp(r'\D'), '');
+        final currentPhoneDigits = profileState.phone.replaceAll(
+          RegExp(r'\D'),
+          '',
+        );
         if (currentPhoneDigits != digits) {
           final updated = ProfileEntity(
             id: profileState.id,
@@ -313,6 +316,200 @@ class _CreatePetAdoptionScreenState
     final isLoading = controllerState.isLoading;
     final isEditing = widget.alertId != null;
 
+    final isDesktop = MediaQuery.sizeOf(context).width >= 900;
+
+    Widget labeled(String label, Widget field) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [FieldLabel(label), field],
+    );
+
+    final nameField = labeled(
+      'Nome do pet *',
+      TextFormField(
+        controller: _nameController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Ex.: Thor, Nina, Pipoca',
+        ),
+        textCapitalization: TextCapitalization.words,
+        enabled: !isLoading,
+      ),
+    );
+
+    final speciesField = labeled(
+      'Espécie *',
+      Row(
+        children: [
+          for (final type in PetType.values) ...[
+            Expanded(
+              child: _SpeciesOption(
+                label: switch (type) {
+                  PetType.dog => 'Cachorro',
+                  PetType.cat => 'Gato',
+                  PetType.other => 'Outro',
+                },
+                selected: _selectedSpecies == type,
+                onTap: isLoading
+                    ? null
+                    : () => setState(() => _selectedSpecies = type),
+              ),
+            ),
+            if (type != PetType.values.last) const SizedBox(width: 10),
+          ],
+        ],
+      ),
+    );
+
+    final regionField = labeled(
+      'Região / Cidade *',
+      TextFormField(
+        controller: _regionController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Ex.: São Paulo, Vila Mariana',
+          prefixIcon: const Icon(Icons.place_outlined, size: 20),
+        ),
+        enabled: !isLoading,
+      ),
+    );
+
+    final contactField = labeled(
+      'Telefone de contato *',
+      TextFormField(
+        controller: _contactController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: '(11) 99999-9999',
+          prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+          helperText: 'Com quem os interessados em adotar vão conversar',
+        ),
+        keyboardType: TextInputType.phone,
+        inputFormatters: [PhoneInputFormatter()],
+        enabled: !isLoading,
+      ),
+    );
+
+    final characteristicsField = labeled(
+      'Características detalhadas *',
+      TextFormField(
+        controller: _characteristicsController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Brincalhão, dócil com crianças, porte médio…',
+          helperText: 'Mínimo de 10 caracteres.',
+        ),
+        maxLines: 3,
+        maxLength: 255,
+        enabled: !isLoading,
+      ),
+    );
+
+    final vaccinatedSwitch = Container(
+      decoration: BoxDecoration(
+        color: isDesktop ? AppColors.primarySoft : AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: SwitchListTile(
+        title: Text('Pet vacinado', style: AppTextStyles.label()),
+        subtitle: Text(
+          'Informe se o pet já recebeu vacinas',
+          style: AppTextStyles.bodySmall(),
+        ),
+        value: _isVaccinated,
+        activeThumbColor: AppColors.primary,
+        onChanged: isLoading
+            ? null
+            : (val) => setState(() => _isVaccinated = val),
+        secondary: const Icon(
+          Icons.health_and_safety_outlined,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+
+    final submitButton = isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : ElevatedButton(
+            onPressed: _submitForm,
+            child: Text(
+              isEditing ? 'Salvar alterações' : 'Publicar para adoção',
+            ),
+          );
+
+    Widget fieldRow(Widget a, Widget b) => Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: a),
+        const SizedBox(width: 16),
+        Expanded(child: b),
+      ],
+    );
+
+    // PC: foto em cima e "Sobre o pet" num cartão logo abaixo
+    final desktopForm = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildImagePicker(isLoading),
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Sobre o pet',
+                style: AppTextStyles.heading3().copyWith(fontSize: 16.5),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Essas informações aparecem no anúncio de adoção.',
+                style: AppTextStyles.bodySmall(),
+              ),
+              const SizedBox(height: 18),
+              fieldRow(nameField, speciesField),
+              const SizedBox(height: 18),
+              fieldRow(regionField, contactField),
+              const SizedBox(height: 18),
+              characteristicsField,
+              const SizedBox(height: 12),
+              vaccinatedSwitch,
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(width: 260, child: submitButton),
+        ),
+      ],
+    );
+
+    final mobileForm = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildImagePicker(isLoading),
+        const SizedBox(height: 22),
+        nameField,
+        const SizedBox(height: 18),
+        speciesField,
+        const SizedBox(height: 18),
+        regionField,
+        const SizedBox(height: 18),
+        contactField,
+        const SizedBox(height: 18),
+        characteristicsField,
+        const SizedBox(height: 12),
+        vaccinatedSwitch,
+        const SizedBox(height: 28),
+        submitButton,
+      ],
+    );
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -325,126 +522,19 @@ class _CreatePetAdoptionScreenState
       body: isLoading && !_controllersInitialized && isEditing
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildImagePicker(isLoading),
-                    const SizedBox(height: 22),
-                    const FieldLabel('Nome do pet *'),
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: AppInputDecoration.defaultDecoration(
-                        labelText: '',
-                        hintText: 'Ex.: Thor, Nina, Pipoca',
-                      ),
-                      textCapitalization: TextCapitalization.words,
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 18),
-                    const FieldLabel('Espécie *'),
-                    Row(
-                      children: [
-                        for (final type in PetType.values) ...[
-                          Expanded(
-                            child: _SpeciesOption(
-                              label: switch (type) {
-                                PetType.dog => 'Cachorro',
-                                PetType.cat => 'Gato',
-                                PetType.other => 'Outro',
-                              },
-                              selected: _selectedSpecies == type,
-                              onTap: isLoading
-                                  ? null
-                                  : () =>
-                                        setState(() => _selectedSpecies = type),
-                            ),
-                          ),
-                          if (type != PetType.values.last)
-                            const SizedBox(width: 10),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    const FieldLabel('Região / Cidade *'),
-                    TextFormField(
-                      controller: _regionController,
-                      decoration: AppInputDecoration.defaultDecoration(
-                        labelText: '',
-                        hintText: 'Ex.: São Paulo, Vila Mariana',
-                        prefixIcon: const Icon(Icons.place_outlined, size: 20),
-                      ),
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 18),
-                    const FieldLabel('Telefone de contato *'),
-                    TextFormField(
-                      controller: _contactController,
-                      decoration: AppInputDecoration.defaultDecoration(
-                        labelText: '',
-                        hintText: '(11) 99999-9999',
-                        prefixIcon: const Icon(Icons.phone_outlined, size: 20),
-                        helperText: 'Com quem os interessados em adotar vão conversar',
-                      ),
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [PhoneInputFormatter()],
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 18),
-                    const FieldLabel('Características detalhadas *'),
-                    TextFormField(
-                      controller: _characteristicsController,
-                      decoration: AppInputDecoration.defaultDecoration(
-                        labelText: '',
-                        hintText:
-                            'Brincalhão, dócil com crianças, porte médio…',
-                        helperText: 'Mínimo de 10 caracteres.',
-                      ),
-                      maxLines: 3,
-                      maxLength: 255,
-                      enabled: !isLoading,
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: SwitchListTile(
-                        title: Text(
-                          'Pet vacinado',
-                          style: AppTextStyles.label(),
-                        ),
-                        subtitle: Text(
-                          'Informe se o pet já recebeu vacinas',
-                          style: AppTextStyles.bodySmall(),
-                        ),
-                        value: _isVaccinated,
-                        activeThumbColor: AppColors.primary,
-                        onChanged: isLoading
-                            ? null
-                            : (val) => setState(() => _isVaccinated = val),
-                        secondary: const Icon(
-                          Icons.health_and_safety_outlined,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    if (isLoading)
-                      const Center(child: CircularProgressIndicator())
-                    else
-                      ElevatedButton(
-                        onPressed: _submitForm,
-                        child: Text(
-                          isEditing
-                              ? 'Salvar alterações'
-                              : 'Publicar para adoção',
-                        ),
-                      ),
-                  ],
+              padding: EdgeInsets.fromLTRB(
+                isDesktop ? 40 : 20,
+                12,
+                isDesktop ? 40 : 20,
+                32,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1040),
+                  child: Form(
+                    key: _formKey,
+                    child: isDesktop ? desktopForm : mobileForm,
+                  ),
                 ),
               ),
             ),

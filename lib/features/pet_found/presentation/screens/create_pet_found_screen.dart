@@ -741,6 +741,22 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
     final isEditing = widget.alertId != null;
     final isLastStep = _step == _stepTitles.length - 1;
 
+    final isDesktop = MediaQuery.sizeOf(context).width >= 900;
+
+    final nextButton = isLoading
+        ? const SizedBox(
+            height: 52,
+            child: Center(child: CircularProgressIndicator()),
+          )
+        : ElevatedButton(
+            onPressed: isLastStep ? _submitForm : () => setState(() => _step++),
+            child: Text(
+              isLastStep
+                  ? (isEditing ? 'Salvar alterações' : 'Publicar registro')
+                  : 'Próximo',
+            ),
+          );
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -764,7 +780,16 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(28, 4, 28, 8),
-                  child: _StepIndicator(current: _step, titles: _stepTitles),
+                  child: Center(
+                    child: ConstrainedBox(
+                      // No PC o indicador de etapas não estica de ponta a ponta
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: _StepIndicator(
+                        current: _step,
+                        titles: _stepTitles,
+                      ),
+                    ),
+                  ),
                 ),
                 Expanded(
                   child: Form(
@@ -772,9 +797,9 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
                     child: IndexedStack(
                       index: _step,
                       children: [
-                        _buildPetStep(isLoading),
-                        _buildLocationStep(isLoading),
-                        _buildFinishStep(isLoading),
+                        _buildPetStep(isLoading, isDesktop),
+                        _buildLocationStep(isLoading, isDesktop),
+                        _buildFinishStep(isLoading, isDesktop),
                       ],
                     ),
                   ),
@@ -783,44 +808,108 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
             ),
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-          child: isLoading
-              ? const SizedBox(
-                  height: 52,
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              : ElevatedButton(
-                  onPressed: isLastStep
-                      ? _submitForm
-                      : () => setState(() => _step++),
-                  child: Text(
-                    isLastStep
-                        ? (isEditing
-                              ? 'Salvar alterações'
-                              : 'Publicar registro')
-                        : 'Próximo',
+          padding: EdgeInsets.fromLTRB(
+            isDesktop ? 40 : 20,
+            8,
+            isDesktop ? 40 : 20,
+            12,
+          ),
+          child: isDesktop
+              // heightFactor: 1 evita que a barra ocupe a tela toda
+              ? Align(
+                  heightFactor: 1,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _maxContent),
+                    child: Row(
+                      children: [
+                        if (_step > 0)
+                          TextButton.icon(
+                            onPressed: isLoading
+                                ? null
+                                : () => setState(() => _step--),
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Etapa anterior'),
+                          ),
+                        const Spacer(),
+                        SizedBox(width: 260, child: nextButton),
+                      ],
+                    ),
                   ),
-                ),
+                )
+              : nextButton,
         ),
       ),
     );
   }
 
-  Widget _stepBody(List<Widget> children) {
+  /// Largura máxima do conteúdo no PC.
+  static const double _maxContent = 1040;
+
+  Widget _stepBody(List<Widget> children, {bool isDesktop = false}) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
+      padding: EdgeInsets.fromLTRB(
+        isDesktop ? 40 : 20,
+        12,
+        isDesktop ? 40 : 20,
+        24,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _maxContent),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildPetStep(bool isLoading) {
-    return _stepBody([
-      _buildMultiImagePicker(isLoading),
-      const SizedBox(height: 22),
-      const FieldLabel('Espécie *'),
+  /// Cartão branco que agrupa campos (usado no PC).
+  Widget _card({
+    String? title,
+    String? subtitle,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null) ...[
+            Text(
+              title,
+              style: AppTextStyles.heading3().copyWith(fontSize: 16.5),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle, style: AppTextStyles.bodySmall()),
+            ],
+            const SizedBox(height: 18),
+          ],
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _labeled(String label, Widget field) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [FieldLabel(label), field],
+  );
+
+  // --- Etapa 1: até 3 fotos e informações do pet ---
+  Widget _buildPetStep(bool isLoading, bool isDesktop) {
+    final speciesField = _labeled(
+      'Espécie *',
       Row(
         children: [
           for (final type in PetType.values) ...[
@@ -841,8 +930,10 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
           ],
         ],
       ),
-      const SizedBox(height: 18),
-      const FieldLabel('Raça aparente (opcional)'),
+    );
+
+    final breedField = _labeled(
+      'Raça aparente (opcional)',
       TextFormField(
         controller: _breedController,
         decoration: AppInputDecoration.defaultDecoration(
@@ -851,8 +942,10 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         ),
         enabled: !isLoading,
       ),
-      const SizedBox(height: 18),
-      const FieldLabel('Idade aparente (opcional)'),
+    );
+
+    final ageField = _labeled(
+      'Idade aparente (opcional)',
       TextFormField(
         controller: _apparentAgeController,
         decoration: AppInputDecoration.defaultDecoration(
@@ -861,12 +954,47 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         ),
         enabled: !isLoading,
       ),
+    );
+
+    if (isDesktop) {
+      // Fotos em cima e "Sobre o pet" logo abaixo
+      return _stepBody(isDesktop: true, [
+        _buildMultiImagePicker(isLoading, wide: true),
+        const SizedBox(height: 20),
+        _card(
+          title: 'Sobre o pet',
+          subtitle: 'Essas informações aparecem no registro.',
+          children: [
+            speciesField,
+            const SizedBox(height: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: breedField),
+                const SizedBox(width: 16),
+                Expanded(child: ageField),
+              ],
+            ),
+          ],
+        ),
+      ]);
+    }
+
+    return _stepBody([
+      _buildMultiImagePicker(isLoading),
+      const SizedBox(height: 22),
+      speciesField,
+      const SizedBox(height: 18),
+      breedField,
+      const SizedBox(height: 18),
+      ageField,
     ]);
   }
 
-  Widget _buildLocationStep(bool isLoading) {
-    return _stepBody([
-      const FieldLabel('CEP (opcional)'),
+  // --- Etapa 2: endereço sincronizado via CEP/ViaCEP e mapa ---
+  Widget _buildLocationStep(bool isLoading, bool isDesktop) {
+    final cepField = _labeled(
+      'CEP (opcional)',
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -911,8 +1039,10 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
           ),
         ],
       ),
-      const SizedBox(height: 16),
-      const FieldLabel('Rua / Logradouro (opcional)'),
+    );
+
+    final streetField = _labeled(
+      'Rua / Logradouro (opcional)',
       TextFormField(
         controller: _streetController,
         decoration: AppInputDecoration.defaultDecoration(
@@ -922,8 +1052,10 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         ),
         enabled: !isLoading,
       ),
-      const SizedBox(height: 16),
-      const FieldLabel('Bairro (opcional)'),
+    );
+
+    final districtField = _labeled(
+      'Bairro (opcional)',
       TextFormField(
         controller: _districtController,
         decoration: AppInputDecoration.defaultDecoration(
@@ -933,53 +1065,47 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         ),
         enabled: !isLoading,
       ),
-      const SizedBox(height: 16),
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const FieldLabel('Cidade *'),
-                TextFormField(
-                  controller: _cityController,
-                  decoration: AppInputDecoration.defaultDecoration(
-                    labelText: '',
-                    hintText: 'Ex.: São Paulo',
-                  ),
-                  enabled: !isLoading,
-                ),
-              ],
+    );
+
+    final cityStateRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 2,
+          child: _labeled(
+            'Cidade *',
+            TextFormField(
+              controller: _cityController,
+              decoration: AppInputDecoration.defaultDecoration(
+                labelText: '',
+                hintText: 'Ex.: São Paulo',
+              ),
+              enabled: !isLoading,
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            flex: 1,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const FieldLabel('UF *'),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedState,
-                  decoration: AppInputDecoration.defaultDecoration(
-                    labelText: '',
-                  ),
-                  items: _brazilStates
-                      .map((uf) => DropdownMenuItem(value: uf, child: Text(uf)))
-                      .toList(),
-                  onChanged: isLoading
-                      ? null
-                      : (val) => setState(() => _selectedState = val),
-                ),
-              ],
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 1,
+          child: _labeled(
+            'UF *',
+            DropdownButtonFormField<String>(
+              initialValue: _selectedState,
+              decoration: AppInputDecoration.defaultDecoration(labelText: ''),
+              items: _brazilStates
+                  .map((uf) => DropdownMenuItem(value: uf, child: Text(uf)))
+                  .toList(),
+              onChanged: isLoading
+                  ? null
+                  : (val) => setState(() => _selectedState = val),
             ),
           ),
-        ],
-      ),
-      const SizedBox(height: 16),
-      const FieldLabel('Ponto de referência (opcional)'),
+        ),
+      ],
+    );
+
+    final referenceField = _labeled(
+      'Ponto de referência (opcional)',
       TextFormField(
         controller: _referenceController,
         decoration: AppInputDecoration.defaultDecoration(
@@ -989,18 +1115,21 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         ),
         enabled: !isLoading,
       ),
-      Align(
-        alignment: Alignment.centerRight,
-        child: TextButton.icon(
-          onPressed: isLoading || _isSyncingLocation
-              ? null
-              : _syncMapFromAddressFields,
-          icon: const Icon(Icons.pin_drop_outlined, size: 18),
-          label: const Text('Localizar endereço no mapa'),
-        ),
+    );
+
+    final locateButton = Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: isLoading || _isSyncingLocation
+            ? null
+            : _syncMapFromAddressFields,
+        icon: const Icon(Icons.pin_drop_outlined, size: 18),
+        label: const Text('Localizar endereço no mapa'),
       ),
-      const SizedBox(height: 6),
-      const FieldLabel('Data em que foi encontrado *'),
+    );
+
+    final dateField = _labeled(
+      'Data em que foi encontrado *',
       InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: isLoading ? null : () => _selectDate(context),
@@ -1013,90 +1142,160 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
           child: Text(_formatDate(_selectedDate), style: AppTextStyles.body()),
         ),
       ),
-      const SizedBox(height: 20),
-      Row(
-        children: [
-          Expanded(child: Text('Marque no mapa', style: AppTextStyles.label())),
-          TextButton.icon(
-            icon: const Icon(Icons.my_location_rounded, size: 18),
-            label: const Text('Usar minha localização'),
-            onPressed: isLoading || _isSyncingLocation
-                ? null
-                : _useCurrentLocation,
+    );
+
+    final mapHeader = Row(
+      children: [
+        Expanded(child: Text('Marque no mapa', style: AppTextStyles.label())),
+        TextButton.icon(
+          icon: const Icon(Icons.my_location_rounded, size: 18),
+          label: const Text('Usar minha localização'),
+          onPressed: isLoading || _isSyncingLocation
+              ? null
+              : _useCurrentLocation,
+        ),
+      ],
+    );
+
+    final map = ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: isDesktop ? 440 : 260,
+        child: FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter:
+                _selectedLocation ?? const LatLng(-23.5505, -46.6333),
+            initialZoom: 15.0,
+            onTap: (tapPosition, point) {
+              if (!isLoading && !_isSyncingLocation) {
+                _syncAddressFromCoordinates(point);
+              }
+            },
           ),
-        ],
-      ),
-      const SizedBox(height: 4),
-      ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: SizedBox(
-          height: 260,
-          child: FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter:
-                  _selectedLocation ?? const LatLng(-23.5505, -46.6333),
-              initialZoom: 15.0,
-              onTap: (tapPosition, point) {
-                if (!isLoading && !_isSyncingLocation) {
-                  _syncAddressFromCoordinates(point);
-                }
-              },
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.example.orelinhas',
             ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.orelinhas',
-              ),
-              if (_selectedLocation != null)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: _selectedLocation!,
-                      width: 44,
-                      height: 44,
-                      alignment: Alignment.topCenter,
-                      child: const Icon(
-                        Icons.location_on_rounded,
-                        color: AppColors.success,
-                        size: 44,
-                      ),
+            if (_selectedLocation != null)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: _selectedLocation!,
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.topCenter,
+                    child: const Icon(
+                      Icons.location_on_rounded,
+                      color: AppColors.success,
+                      size: 44,
                     ),
-                  ],
-                ),
-            ],
-          ),
+                  ),
+                ],
+              ),
+          ],
         ),
       ),
-      const SizedBox(height: 10),
-      Row(
-        children: [
-          Icon(
-            _selectedLocation == null
-                ? Icons.touch_app_outlined
-                : Icons.check_circle_rounded,
-            size: 18,
-            color: _selectedLocation == null
-                ? AppColors.textSecondary
-                : AppColors.success,
+    );
+
+    final mapStatus = Row(
+      children: [
+        Icon(
+          _selectedLocation == null
+              ? Icons.touch_app_outlined
+              : Icons.check_circle_rounded,
+          size: 18,
+          color: _selectedLocation == null
+              ? AppColors.textSecondary
+              : AppColors.success,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            _isSyncingLocation
+                ? 'Sincronizando endereço e coordenadas...'
+                : _selectedLocation == null
+                ? 'Toque no mapa ou informe o CEP/endereço para fixar o pino.'
+                : 'Local marcado: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
+            style: AppTextStyles.bodySmall(),
           ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              _isSyncingLocation
-                  ? 'Sincronizando endereço e coordenadas...'
-                  : _selectedLocation == null
-                  ? 'Toque no mapa ou informe o CEP/endereço acima para fixar o pino.'
-                  : 'Local marcado: ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
-              style: AppTextStyles.bodySmall(),
+        ),
+      ],
+    );
+
+    if (isDesktop) {
+      return _stepBody(isDesktop: true, [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: _card(
+                title: 'Onde e quando foi encontrado',
+                subtitle: 'O local ajuda o tutor a reconhecer o pet.',
+                children: [
+                  cepField,
+                  const SizedBox(height: 14),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: streetField),
+                      const SizedBox(width: 12),
+                      Expanded(child: districtField),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  cityStateRow,
+                  const SizedBox(height: 14),
+                  referenceField,
+                  locateButton,
+                  dateField,
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+            const SizedBox(width: 20),
+            Expanded(
+              flex: 4,
+              child: _card(
+                children: [
+                  mapHeader,
+                  const SizedBox(height: 4),
+                  map,
+                  const SizedBox(height: 10),
+                  mapStatus,
+                ],
+              ),
+            ),
+          ],
+        ),
+      ]);
+    }
+
+    return _stepBody([
+      cepField,
+      const SizedBox(height: 16),
+      streetField,
+      const SizedBox(height: 16),
+      districtField,
+      const SizedBox(height: 16),
+      cityStateRow,
+      const SizedBox(height: 16),
+      referenceField,
+      locateButton,
+      const SizedBox(height: 6),
+      dateField,
+      const SizedBox(height: 20),
+      mapHeader,
+      const SizedBox(height: 4),
+      map,
+      const SizedBox(height: 10),
+      mapStatus,
     ]);
   }
 
-  Widget _buildFinishStep(bool isLoading) {
+  // --- Etapa 3: descrição, contato com LGPD e revisão ---
+  Widget _buildFinishStep(bool isLoading, bool isDesktop) {
     final firstPhoto = _photos.isNotEmpty ? _photos.first : null;
     final speciesLabel = switch (_selectedType) {
       PetType.dog => 'Cachorro',
@@ -1104,8 +1303,8 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       PetType.other => 'Outro',
     };
 
-    return _stepBody([
-      const FieldLabel('Descrição / Características (opcional)'),
+    final descriptionField = _labeled(
+      'Descrição / Características (opcional)',
       TextFormField(
         controller: _descriptionController,
         decoration: AppInputDecoration.defaultDecoration(
@@ -1117,8 +1316,10 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         maxLength: 255,
         enabled: !isLoading,
       ),
-      const SizedBox(height: 10),
-      const FieldLabel('Telefone de contato (opcional)'),
+    );
+
+    final contactField = _labeled(
+      'Telefone de contato (opcional)',
       TextFormField(
         controller: _contactController,
         decoration: AppInputDecoration.defaultDecoration(
@@ -1131,51 +1332,97 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
         inputFormatters: [PhoneInputFormatter()],
         enabled: !isLoading,
       ),
-      const SizedBox(height: 10),
-      Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
+    );
+
+    final lgpd = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDesktop ? AppColors.primarySoft : AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.privacy_tip_outlined,
+            size: 16,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Proteção de Dados (LGPD): O telefone é opcional. Caso opte por informá-lo, ele será exibido no anúncio exclusivamente para que o tutor do pet entre em contato.',
+              style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final reviewTitle = Text(
+      'Revise antes de publicar',
+      style: AppTextStyles.sectionHeader(),
+    );
+
+    final review = _ReviewCard(
+      imageBytes: firstPhoto?.bytes,
+      imageUrl: firstPhoto?.existingUrl,
+      photoCount: _photos.length,
+      name: _breedController.text.trim().isNotEmpty
+          ? _breedController.text.trim()
+          : '$speciesLabel encontrado',
+      subtitle: '$speciesLabel • ${_photos.length} foto(s)',
+      location: _composeReadableLocation(),
+      date: _formatDate(_selectedDate),
+      hasPin: _selectedLocation != null,
+      onEditStep: (step) => setState(() => _step = step),
+    );
+
+    if (isDesktop) {
+      return _stepBody(isDesktop: true, [
+        Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(
-              Icons.privacy_tip_outlined,
-              size: 16,
-              color: AppColors.primary,
-            ),
-            const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                'Proteção de Dados (LGPD): O telefone é opcional. Caso opte por informá-lo, ele será exibido no anúncio exclusivamente para que o tutor do pet entre em contato.',
-                style: AppTextStyles.bodySmall(color: AppColors.textSecondary),
+              child: _card(
+                title: 'Detalhes e contato',
+                children: [
+                  descriptionField,
+                  const SizedBox(height: 10),
+                  contactField,
+                  const SizedBox(height: 14),
+                  lgpd,
+                ],
+              ),
+            ),
+            const SizedBox(width: 20),
+            SizedBox(
+              width: 420,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [reviewTitle, const SizedBox(height: 10), review],
               ),
             ),
           ],
         ),
-      ),
-      const SizedBox(height: 24),
-      Text('Revise antes de publicar', style: AppTextStyles.sectionHeader()),
+      ]);
+    }
+
+    return _stepBody([
+      descriptionField,
       const SizedBox(height: 10),
-      _ReviewCard(
-        imageBytes: firstPhoto?.bytes,
-        imageUrl: firstPhoto?.existingUrl,
-        photoCount: _photos.length,
-        name: _breedController.text.trim().isNotEmpty
-            ? _breedController.text.trim()
-            : '$speciesLabel encontrado',
-        subtitle: '$speciesLabel • ${_photos.length} foto(s)',
-        location: _composeReadableLocation(),
-        date: _formatDate(_selectedDate),
-        hasPin: _selectedLocation != null,
-        onEditStep: (step) => setState(() => _step = step),
-      ),
+      contactField,
+      const SizedBox(height: 10),
+      lgpd,
+      const SizedBox(height: 24),
+      reviewTitle,
+      const SizedBox(height: 10),
+      review,
     ]);
   }
 
-  Widget _buildMultiImagePicker(bool isLoading) {
+  /// [wide]: no PC as fotos ficam mais baixas (formato paisagem).
+  Widget _buildMultiImagePicker(bool isLoading, {bool wide = false}) {
     final canAddMore = _photos.length < _maxPhotos;
 
     return Container(
@@ -1183,6 +1430,7 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1201,11 +1449,11 @@ class _CreatePetFoundScreenState extends ConsumerState<CreatePetFoundScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: _maxPhotos,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              crossAxisSpacing: 8,
+              crossAxisSpacing: wide ? 12 : 8,
               mainAxisSpacing: 8,
-              childAspectRatio: 0.9,
+              childAspectRatio: wide ? 1.6 : 0.9,
             ),
             itemBuilder: (context, index) {
               if (index < _photos.length) {
