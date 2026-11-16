@@ -164,6 +164,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: AboutScreen()),
           ),
+          // Dentro da estrutura principal para mostrar o menu lateral no PC
+          GoRoute(
+            path: AppRoutes.reportAbuse,
+            builder: (context, state) => const ReportAbuseScreen(),
+          ),
         ],
       ),
 
@@ -243,10 +248,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id']!;
           return CreatePetAdoptionScreen(alertId: id);
         },
-      ),
-      GoRoute(
-        path: AppRoutes.reportAbuse,
-        builder: (context, state) => const ReportAbuseScreen(),
       ),
       GoRoute(
         path: '/pet-matches/:id',

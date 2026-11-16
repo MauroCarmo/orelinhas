@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/routing/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 
 class ReportAbuseScreen extends StatelessWidget {
@@ -108,7 +109,8 @@ class ReportAbuseScreen extends StatelessWidget {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           tooltip: 'Voltar',
-          onPressed: () => context.pop(),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go(AppRoutes.home),
         ),
         // No PC o título aparece grande no conteúdo
         title: isDesktop ? null : const Text('Denunciar maus-tratos'),
