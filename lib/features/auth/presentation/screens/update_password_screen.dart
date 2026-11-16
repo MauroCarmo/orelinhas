@@ -66,6 +66,7 @@ class _UpdatePasswordScreenState extends ConsumerState<UpdatePasswordScreen> {
       title: 'Crie uma nova senha',
       subtitle: 'Escolha uma senha que você não usa em outros sites.',
       showLogo: false,
+      icon: Icons.key_rounded,
       children: [
         const FieldLabel('Nova senha'),
         TextField(
