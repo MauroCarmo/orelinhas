@@ -30,7 +30,10 @@ class LoginForm extends ConsumerStatefulWidget {
   /// para a rota de cadastro (usado no painel do PC).
   final VoidCallback? onCreateAccount;
 
-  const LoginForm({super.key, this.onCreateAccount});
+  /// Mostra "Entrar com Google" antes dos campos de e-mail e senha.
+  final bool googleFirst;
+
+  const LoginForm({super.key, this.onCreateAccount, this.googleFirst = false});
 
   @override
   ConsumerState<LoginForm> createState() => _LoginFormState();
@@ -80,94 +83,118 @@ class _LoginFormState extends ConsumerState<LoginForm> {
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading;
 
+    Widget divider(String text) => Row(
+      children: [
+        const Expanded(child: Divider()),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(text, style: AppTextStyles.bodySmall()),
+        ),
+        const Expanded(child: Divider()),
+      ],
+    );
+
+    final emailFields = <Widget>[
+      const FieldLabel('E-mail'),
+      TextField(
+        controller: _emailController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'seuemail@exemplo.com',
+          prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
+        ),
+        keyboardType: TextInputType.emailAddress,
+        autofillHints: const [AutofillHints.email],
+        textInputAction: TextInputAction.next,
+      ),
+      const SizedBox(height: 18),
+      const FieldLabel('Senha'),
+      TextField(
+        controller: _passwordController,
+        decoration: AppInputDecoration.defaultDecoration(
+          labelText: '',
+          hintText: 'Sua senha',
+          prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+          suffixIcon: IconButton(
+            tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              size: 20,
+            ),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
+          ),
+        ),
+        obscureText: _obscurePassword,
+        autofillHints: const [AutofillHints.password],
+        onSubmitted: (_) => isLoading ? null : _login(),
+      ),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton(
+          onPressed: () => context.push('/forgot-password'),
+          child: const Text('Esqueci minha senha'),
+        ),
+      ),
+      const SizedBox(height: 12),
+      ElevatedButton(
+        style: AppButtonStyles.primary(),
+        onPressed: isLoading ? null : _login,
+        child: isLoading ? const ButtonSpinner() : const Text('Entrar'),
+      ),
+    ];
+
+    final googleButton = OutlinedButton.icon(
+      style: AppButtonStyles.outlined(foregroundColor: AppColors.textPrimary),
+      onPressed: isLoading ? null : _loginWithGoogle,
+      icon: const Icon(Icons.g_mobiledata_rounded, size: 30),
+      label: const Text('Entrar com Google'),
+    );
+
+    final signUpLink = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'Ainda não tem conta?',
+          style: AppTextStyles.body(color: AppColors.textSecondary),
+        ),
+        TextButton(
+          onPressed: widget.onCreateAccount ?? () => context.push('/register'),
+          child: const Text('Criar conta'),
+        ),
+      ],
+    );
+
+    // Variante do PC: Google primeiro, depois e-mail e senha.
+    if (widget.googleFirst) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          googleButton,
+          const SizedBox(height: 22),
+          divider('ou entre com seu e-mail'),
+          const SizedBox(height: 22),
+          ...emailFields,
+          const SizedBox(height: 20),
+          signUpLink,
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const FieldLabel('E-mail'),
-        TextField(
-          controller: _emailController,
-          decoration: AppInputDecoration.defaultDecoration(
-            labelText: '',
-            hintText: 'seuemail@exemplo.com',
-            prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
-          ),
-          keyboardType: TextInputType.emailAddress,
-          autofillHints: const [AutofillHints.email],
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 18),
-        const FieldLabel('Senha'),
-        TextField(
-          controller: _passwordController,
-          decoration: AppInputDecoration.defaultDecoration(
-            labelText: '',
-            hintText: 'Sua senha',
-            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
-            suffixIcon: IconButton(
-              tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
-              icon: Icon(
-                _obscurePassword
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-                size: 20,
-              ),
-              onPressed: () =>
-                  setState(() => _obscurePassword = !_obscurePassword),
-            ),
-          ),
-          obscureText: _obscurePassword,
-          autofillHints: const [AutofillHints.password],
-          onSubmitted: (_) => isLoading ? null : _login(),
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: () => context.push('/forgot-password'),
-            child: const Text('Esqueci minha senha'),
-          ),
-        ),
-        const SizedBox(height: 12),
-        ElevatedButton(
-          style: AppButtonStyles.primary(),
-          onPressed: isLoading ? null : _login,
-          child: isLoading ? const ButtonSpinner() : const Text('Entrar'),
-        ),
+        ...emailFields,
         const SizedBox(height: 22),
-        Row(
-          children: [
-            const Expanded(child: Divider()),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text('ou', style: AppTextStyles.bodySmall()),
-            ),
-            const Expanded(child: Divider()),
-          ],
-        ),
+        divider('ou'),
         const SizedBox(height: 22),
-        OutlinedButton.icon(
-          style: AppButtonStyles.outlined(
-            foregroundColor: AppColors.textPrimary,
-          ),
-          onPressed: isLoading ? null : _loginWithGoogle,
-          icon: const Icon(Icons.g_mobiledata_rounded, size: 30),
-          label: const Text('Entrar com Google'),
-        ),
+        googleButton,
         const SizedBox(height: 28),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Ainda não tem conta?',
-              style: AppTextStyles.body(color: AppColors.textSecondary),
-            ),
-            TextButton(
-              onPressed:
-                  widget.onCreateAccount ?? () => context.push('/register'),
-              child: const Text('Criar conta'),
-            ),
-          ],
-        ),
+        signUpLink,
       ],
     );
   }

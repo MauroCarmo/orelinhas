@@ -89,8 +89,8 @@ class _MobileWelcome extends StatelessWidget {
                   Positioned(
                     left: 0,
                     right: 0,
-                    top: artHeight * 0.72,
-                    height: artHeight * 0.28 + 2,
+                    top: artHeight * 0.84,
+                    height: artHeight * 0.16 + 2,
                     child: const DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -118,27 +118,19 @@ class _MobileWelcome extends StatelessWidget {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [Color(0x00143F30), AppColors.primaryDark],
-                          stops: [0, 0.35],
+                          stops: [0, 0.3],
                         ),
                       ),
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
                           28,
-                          56,
+                          24,
                           28,
                           24 + bottomInset,
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              'Encontre, registre e ajude pets a voltarem para casa.',
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.body(
-                                color: Colors.white.withAlpha(225),
-                              ).copyWith(fontSize: 15),
-                            ),
-                            const SizedBox(height: 20),
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(

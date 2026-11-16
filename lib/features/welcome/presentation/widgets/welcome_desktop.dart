@@ -7,8 +7,8 @@ import '../../../auth/presentation/screens/register_screen.dart';
 /// Etapas do painel de acesso no PC.
 enum _AuthPanel { login, register, registered }
 
-/// Tela de boas-vindas para telas largas (PC): arte à esquerda e painel com
-/// login e cadastro à direita. Apenas visual — usa os mesmos formulários das
+/// Tela de boas-vindas para telas largas (PC): foto em destaque à esquerda e
+/// login e cadastro à direita, sobre fundo branco. Apenas visual — usa os mesmos formulários das
 /// telas de login e cadastro do celular.
 class WelcomeDesktop extends StatefulWidget {
   const WelcomeDesktop({super.key});
@@ -28,24 +28,28 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
 
   void _show(_AuthPanel panel) => setState(() => _panel = panel);
 
+  static const double _margin = 22;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primaryDark,
+      backgroundColor: Colors.white,
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // A arte ocupa a altura toda; a largura acompanha a proporção da
-          // imagem, sem passar de metade da tela.
-          final artPanelWidth =
-              (constraints.maxHeight *
-                      _artWidth /
-                      (_artHeight * _artVisibleFraction))
-                  .clamp(380.0, constraints.maxWidth * 0.5);
+          // A foto ocupa a altura toda (com margem); a largura acompanha a
+          // proporção da arte, sem passar de 52% da tela.
+          final photoHeight = constraints.maxHeight - 2 * _margin;
+          final photoWidth =
+              (photoHeight * _artWidth / (_artHeight * _artVisibleFraction))
+                  .clamp(380.0, constraints.maxWidth * 0.52);
 
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(width: artPanelWidth, child: const _ArtPanel()),
+              Padding(
+                padding: const EdgeInsets.all(_margin),
+                child: SizedBox(width: photoWidth, child: const _PhotoPanel()),
+              ),
               Expanded(child: _buildAuthSide()),
             ],
           );
@@ -57,67 +61,49 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
   Widget _buildAuthSide() {
     return Stack(
       children: [
-        // Patinhas decorativas bem suaves no fundo verde
-        Positioned(
-          right: -60,
-          top: -40,
-          child: Transform.rotate(
-            angle: 0.35,
-            child: OrelinhasLogoMark(
-              size: 260,
-              color: Colors.white.withAlpha(10),
-              heartColor: AppColors.primaryDark,
-            ),
-          ),
-        ),
-        Positioned(
-          left: 40,
-          bottom: -50,
-          child: Transform.rotate(
-            angle: -0.3,
-            child: OrelinhasLogoMark(
-              size: 180,
-              color: Colors.white.withAlpha(8),
-              heartColor: AppColors.primaryDark,
-            ),
-          ),
-        ),
+        // Patinhas verdes decorativas
+        const _Paw(right: -40, top: -30, size: 210, angle: 0.35, alpha: 22),
+        const _Paw(right: 90, top: 190, size: 46, angle: -0.25, alpha: 40),
+        const _Paw(left: 30, bottom: -40, size: 160, angle: -0.3, alpha: 18),
+        const _Paw(right: 60, bottom: 70, size: 70, angle: 0.2, alpha: 30),
         Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 56, vertical: 40),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 500),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Encontre, registre e ajude pets a voltarem para casa.',
-                    style: AppTextStyles.heading1(
-                      color: Colors.white,
-                    ).copyWith(fontSize: 28, height: 1.25),
-                  ),
-                  const SizedBox(height: 14),
-                  const Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _FeatureChip(
-                        icon: Icons.search_rounded,
-                        label: 'Pets perdidos',
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: OrelinhasLogo(markSize: 30, fontSize: 24),
+                    ),
+                    const SizedBox(height: 32),
+                    if (_panel != _AuthPanel.registered) ...[
+                      _PanelTabs(
+                        isLogin: _panel == _AuthPanel.login,
+                        onLogin: () => _show(_AuthPanel.login),
+                        onRegister: () => _show(_AuthPanel.register),
                       ),
-                      _FeatureChip(
-                        icon: Icons.pets_rounded,
-                        label: 'Pets encontrados',
-                      ),
-                      _FeatureChip(
-                        icon: Icons.favorite_border_rounded,
-                        label: 'Adoção',
-                      ),
+                      const SizedBox(height: 30),
                     ],
-                  ),
-                  const SizedBox(height: 28),
-                  _buildCard(),
-                ],
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: KeyedSubtree(
+                        key: ValueKey(_panel),
+                        child: switch (_panel) {
+                          _AuthPanel.login => _buildLogin(),
+                          _AuthPanel.register => _buildRegister(),
+                          _AuthPanel.registered => _buildRegistered(),
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -126,36 +112,23 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
     );
   }
 
-  Widget _buildCard() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(32, 28, 32, 24),
-      decoration: BoxDecoration(
-        color: AppColors.scaffoldLight,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(50),
-            blurRadius: 40,
-            offset: const Offset(0, 18),
-          ),
-        ],
-      ),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        alignment: Alignment.topCenter,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: KeyedSubtree(
-            key: ValueKey(_panel),
-            child: switch (_panel) {
-              _AuthPanel.login => _buildLogin(),
-              _AuthPanel.register => _buildRegister(),
-              _AuthPanel.registered => _buildRegistered(),
-            },
-          ),
+  Widget _title(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: AppTextStyles.heading1().copyWith(fontSize: 30, height: 1.15),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          subtitle,
+          style: AppTextStyles.body(
+            color: AppColors.textSecondary,
+          ).copyWith(fontSize: 15),
+        ),
+        const SizedBox(height: 26),
+      ],
     );
   }
 
@@ -163,20 +136,14 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _PanelTabs(
-          isLogin: true,
-          onLogin: () {},
-          onRegister: () => _show(_AuthPanel.register),
-        ),
-        const SizedBox(height: 26),
-        Text('Que bom te ver de novo', style: AppTextStyles.heading1()),
-        const SizedBox(height: 6),
-        Text(
+        _title(
+          'Que bom te ver de novo',
           'Entre para acompanhar seus alertas e ajudar pets perto de você.',
-          style: AppTextStyles.body(color: AppColors.textSecondary),
         ),
-        const SizedBox(height: 24),
-        LoginForm(onCreateAccount: () => _show(_AuthPanel.register)),
+        LoginForm(
+          googleFirst: true,
+          onCreateAccount: () => _show(_AuthPanel.register),
+        ),
       ],
     );
   }
@@ -185,19 +152,7 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _PanelTabs(
-          isLogin: false,
-          onLogin: () => _show(_AuthPanel.login),
-          onRegister: () {},
-        ),
-        const SizedBox(height: 26),
-        Text('Crie sua conta', style: AppTextStyles.heading1()),
-        const SizedBox(height: 6),
-        Text(
-          RegisterForm.subtitle,
-          style: AppTextStyles.body(color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 24),
+        _title('Crie sua conta', RegisterForm.subtitle),
         RegisterForm(
           wide: true,
           onRegistered: () => _show(_AuthPanel.registered),
@@ -250,65 +205,123 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
   }
 }
 
-/// Arte do Orelinhas (logo, frase e o cachorro com o gato), recortada para
-/// preencher a altura da tela e esmaecendo no verde do painel ao lado.
-class _ArtPanel extends StatelessWidget {
-  const _ArtPanel();
+/// Foto do Orelinhas em destaque: cartão arredondado com uma moldura verde
+/// deslocada atrás e a chamada do app sobre a parte de baixo da imagem.
+class _PhotoPanel extends StatelessWidget {
+  const _PhotoPanel();
+
+  static const double _radius = 34;
+  static const double _offset = 14;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Semantics(
-          label: 'Orelinhas. Mais que um app, uma ponte para o reencontro.',
-          image: true,
-          child: ClipRect(
-            child: FittedBox(
-              fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
-              child: ClipRect(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  heightFactor: _WelcomeDesktopState._artVisibleFraction,
-                  child: Image.asset(
-                    'assets/images/welcome.webp',
-                    width: _WelcomeDesktopState._artWidth,
-                    height: _WelcomeDesktopState._artHeight,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Esmaece a borda direita no verde do painel
+        // Moldura verde deslocada (detalhe)
         const Positioned(
-          top: 0,
-          bottom: 0,
+          left: _offset,
+          top: _offset,
           right: 0,
-          width: 90,
+          bottom: 0,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [Color(0x00143F30), AppColors.primaryDark],
-              ),
+              color: AppColors.primary,
+              borderRadius: BorderRadius.all(Radius.circular(_radius)),
             ),
           ),
         ),
-        // Esmaece a parte de baixo
-        const Positioned(
+        Positioned(
           left: 0,
-          right: 0,
-          bottom: 0,
-          height: 120,
+          top: 0,
+          right: _offset,
+          bottom: _offset,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0x00143F30), Color(0xCC143F30)],
+              borderRadius: BorderRadius.circular(_radius),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(40),
+                  blurRadius: 30,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(_radius),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Semantics(
+                    label:
+                        'Orelinhas. Mais que um app, uma ponte para o reencontro.',
+                    image: true,
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                      child: ClipRect(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          heightFactor:
+                              _WelcomeDesktopState._artVisibleFraction,
+                          child: Image.asset(
+                            'assets/images/welcome.webp',
+                            width: _WelcomeDesktopState._artWidth,
+                            height: _WelcomeDesktopState._artHeight,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Chamada sobre a foto
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x00143F30), Color(0xE6143F30)],
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(32, 70, 32, 28),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Encontre, registre e ajude pets a voltarem para casa.',
+                              style: AppTextStyles.heading1(
+                                color: Colors.white,
+                              ).copyWith(fontSize: 22, height: 1.25),
+                            ),
+                            const SizedBox(height: 14),
+                            const Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _FeatureChip(
+                                  icon: Icons.search_rounded,
+                                  label: 'Pets perdidos',
+                                ),
+                                _FeatureChip(
+                                  icon: Icons.pets_rounded,
+                                  label: 'Pets encontrados',
+                                ),
+                                _FeatureChip(
+                                  icon: Icons.favorite_border_rounded,
+                                  label: 'Adoção',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -318,7 +331,48 @@ class _ArtPanel extends StatelessWidget {
   }
 }
 
-/// Seletor "Entrar / Criar conta" no topo do cartão.
+/// Patinha verde decorativa no fundo branco.
+class _Paw extends StatelessWidget {
+  final double? left;
+  final double? right;
+  final double? top;
+  final double? bottom;
+  final double size;
+  final double angle;
+  final int alpha;
+
+  const _Paw({
+    this.left,
+    this.right,
+    this.top,
+    this.bottom,
+    required this.size,
+    required this.angle,
+    required this.alpha,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left,
+      right: right,
+      top: top,
+      bottom: bottom,
+      child: ExcludeSemantics(
+        child: Transform.rotate(
+          angle: angle,
+          child: OrelinhasLogoMark(
+            size: size,
+            color: AppColors.primary.withAlpha(alpha),
+            heartColor: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Abas "Entrar / Criar conta" com sublinhado verde.
 class _PanelTabs extends StatelessWidget {
   final bool isLogin;
   final VoidCallback onLogin;
@@ -332,15 +386,14 @@ class _PanelTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.primarySoft,
-        borderRadius: BorderRadius.circular(30),
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 2)),
       ),
       child: Row(
         children: [
           _tab('Entrar', isLogin, onLogin),
+          const SizedBox(width: 28),
           _tab('Criar conta', !isLogin, onRegister),
         ],
       ),
@@ -348,26 +401,29 @@ class _PanelTabs extends StatelessWidget {
   }
 
   Widget _tab(String label, bool selected, VoidCallback onTap) {
-    return Expanded(
-      child: Semantics(
-        button: true,
-        selected: selected,
-        child: Material(
-          color: selected ? AppColors.primary : Colors.transparent,
-          shape: const StadiumBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: selected ? null : onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                style: AppTextStyles.button(
-                  color: selected ? Colors.white : AppColors.primary,
-                ),
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: selected ? null : onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? AppColors.primary : Colors.transparent,
+                width: 3,
               ),
             ),
+          ),
+          transform: Matrix4.translationValues(0, 2, 0),
+          child: Text(
+            label,
+            style: AppTextStyles.heading2(
+              color: selected ? AppColors.primary : AppColors.textSecondary,
+            ).copyWith(fontSize: 17),
           ),
         ),
       ),
@@ -375,7 +431,7 @@ class _PanelTabs extends StatelessWidget {
   }
 }
 
-/// Etiqueta com os principais recursos do app.
+/// Etiqueta com os principais recursos do app (sobre a foto).
 class _FeatureChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -387,19 +443,16 @@ class _FeatureChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withAlpha(20),
+        color: Colors.white.withAlpha(38),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withAlpha(30)),
+        border: Border.all(color: Colors.white.withAlpha(60)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: Colors.white.withAlpha(220)),
+          Icon(icon, size: 16, color: Colors.white),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: AppTextStyles.label(color: Colors.white.withAlpha(230)),
-          ),
+          Text(label, style: AppTextStyles.label(color: Colors.white)),
         ],
       ),
     );
