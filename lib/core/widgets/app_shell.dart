@@ -50,6 +50,7 @@ class AppShell extends StatelessWidget {
       AppRoutes.petFound,
       AppRoutes.petAdoption,
       AppRoutes.petLostMap,
+      AppRoutes.petFoundMap,
       AppRoutes.profile,
       AppRoutes.notifications,
       AppRoutes.about,
