@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/orelinhas_logo.dart';
@@ -34,26 +36,18 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          // A foto ocupa a altura toda (com margem); a largura acompanha a
-          // proporção da arte, sem passar de 52% da tela.
-          final photoHeight = constraints.maxHeight - 2 * _margin;
-          final photoWidth =
-              (photoHeight * _artWidth / (_artHeight * _artVisibleFraction))
-                  .clamp(380.0, constraints.maxWidth * 0.52);
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(_margin),
-                child: SizedBox(width: photoWidth, child: const _PhotoPanel()),
-              ),
-              Expanded(child: _buildAuthSide()),
-            ],
-          );
-        },
+      // Metade da tela para a foto, metade para o login
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Expanded(
+            child: Padding(
+              padding: EdgeInsets.all(_margin),
+              child: _PhotoPanel(),
+            ),
+          ),
+          Expanded(child: _buildAuthSide()),
+        ],
       ),
     );
   }
@@ -205,128 +199,105 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
   }
 }
 
-/// Foto do Orelinhas em destaque: cartão arredondado com uma moldura verde
-/// deslocada atrás e a chamada do app sobre a parte de baixo da imagem.
+/// Foto do Orelinhas em destaque, ocupando metade da tela.
+///
+/// A arte é vertical, então ela aparece inteira no centro (logo, frase, o
+/// cachorro e o gato) e as laterais são preenchidas com a própria foto
+/// desfocada, para não cortar nada.
 class _PhotoPanel extends StatelessWidget {
   const _PhotoPanel();
 
   static const double _radius = 34;
-  static const double _offset = 14;
+
+  Widget _art() {
+    return ClipRect(
+      child: Align(
+        alignment: Alignment.topCenter,
+        heightFactor: _WelcomeDesktopState._artVisibleFraction,
+        child: Image.asset(
+          'assets/images/welcome.webp',
+          width: _WelcomeDesktopState._artWidth,
+          height: _WelcomeDesktopState._artHeight,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Moldura verde deslocada (detalhe)
-        const Positioned(
-          left: _offset,
-          top: _offset,
-          right: 0,
-          bottom: 0,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.all(Radius.circular(_radius)),
-            ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_radius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(35),
+            blurRadius: 30,
+            offset: const Offset(0, 14),
           ),
-        ),
-        Positioned(
-          left: 0,
-          top: 0,
-          right: _offset,
-          bottom: _offset,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(_radius),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(40),
-                  blurRadius: 30,
-                  offset: const Offset(0, 14),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_radius),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Fundo: a mesma foto ampliada e desfocada
+            ExcludeSemantics(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(
+                  sigmaX: 40,
+                  sigmaY: 40,
+                  tileMode: TileMode.mirror,
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(_radius),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Semantics(
-                    label:
-                        'Orelinhas. Mais que um app, uma ponte para o reencontro.',
-                    image: true,
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                      child: ClipRect(
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          heightFactor:
-                              _WelcomeDesktopState._artVisibleFraction,
-                          child: Image.asset(
-                            'assets/images/welcome.webp',
-                            width: _WelcomeDesktopState._artWidth,
-                            height: _WelcomeDesktopState._artHeight,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Chamada sobre a foto
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color(0x00143F30), Color(0xE6143F30)],
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(32, 70, 32, 28),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Encontre, registre e ajude pets a voltarem para casa.',
-                              style: AppTextStyles.heading1(
-                                color: Colors.white,
-                              ).copyWith(fontSize: 22, height: 1.25),
-                            ),
-                            const SizedBox(height: 14),
-                            const Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _FeatureChip(
-                                  icon: Icons.search_rounded,
-                                  label: 'Pets perdidos',
-                                ),
-                                _FeatureChip(
-                                  icon: Icons.pets_rounded,
-                                  label: 'Pets encontrados',
-                                ),
-                                _FeatureChip(
-                                  icon: Icons.favorite_border_rounded,
-                                  label: 'Adoção',
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                child: FittedBox(fit: BoxFit.cover, child: _art()),
               ),
             ),
-          ),
+            // Foto inteira no centro, com as laterais esmaecendo no fundo
+            Semantics(
+              label: 'Orelinhas. Mais que um app, uma ponte para o reencontro.',
+              image: true,
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  // Largura que a foto ocupa (fração do painel) para o
+                  // esmaecimento começar exatamente nas bordas dela.
+                  const aspect =
+                      _WelcomeDesktopState._artWidth /
+                      (_WelcomeDesktopState._artHeight *
+                          _WelcomeDesktopState._artVisibleFraction);
+                  final f = (box.maxHeight * aspect / box.maxWidth).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  final edge = (1 - f) / 2;
+                  final fade = f * 0.15;
+                  return ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => LinearGradient(
+                      colors: const [
+                        Colors.transparent,
+                        Colors.transparent,
+                        Colors.black,
+                        Colors.black,
+                        Colors.transparent,
+                        Colors.transparent,
+                      ],
+                      stops: [
+                        0,
+                        edge + 0.004,
+                        edge + fade,
+                        1 - edge - fade,
+                        1 - edge - 0.004,
+                        1,
+                      ],
+                    ).createShader(rect),
+                    child: FittedBox(fit: BoxFit.contain, child: _art()),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -426,34 +397,6 @@ class _PanelTabs extends StatelessWidget {
             ).copyWith(fontSize: 17),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Etiqueta com os principais recursos do app (sobre a foto).
-class _FeatureChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _FeatureChip({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(38),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withAlpha(60)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Colors.white),
-          const SizedBox(width: 6),
-          Text(label, style: AppTextStyles.label(color: Colors.white)),
-        ],
       ),
     );
   }
