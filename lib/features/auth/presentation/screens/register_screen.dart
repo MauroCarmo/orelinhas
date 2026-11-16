@@ -10,6 +10,7 @@ import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/auth_layout.dart';
+import '../../../welcome/presentation/widgets/welcome_desktop.dart';
 
 /// Tela de cadastro (usada no celular e quando a rota /register é aberta
 /// direto).
@@ -25,6 +26,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // No PC, o cadastro fica no painel da tela de boas-vindas
+    if (MediaQuery.sizeOf(context).width >= 900) {
+      return const WelcomeDesktop(startOnRegister: true);
+    }
     if (_registrationSuccess) {
       return AuthConfirmation(
         icon: Icons.mark_email_unread_outlined,
@@ -38,7 +43,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return AuthLayout(
       title: 'Crie sua conta',
       subtitle: RegisterForm.subtitle,
-      showLogo: false,
       children: [
         RegisterForm(
           onRegistered: () => setState(() => _registrationSuccess = true),
@@ -251,7 +255,7 @@ class _RegisterFormState extends ConsumerState<RegisterForm> {
                 onPressed: () =>
                     setState(() => _obscurePassword = !_obscurePassword),
               ),
-            ),
+            ).copyWith(helperMaxLines: 2),
             obscureText: _obscurePassword,
             validator: AppValidators.combine([
               AppValidators.required('Senha'),

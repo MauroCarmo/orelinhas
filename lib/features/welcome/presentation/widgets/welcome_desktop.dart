@@ -11,7 +11,10 @@ enum _AuthPanel { login, register, registered }
 /// login e cadastro à direita, sobre fundo branco. Apenas visual — usa os mesmos formulários das
 /// telas de login e cadastro do celular.
 class WelcomeDesktop extends StatefulWidget {
-  const WelcomeDesktop({super.key});
+  /// Abre já na aba "Criar conta" (usado pela rota /register no PC).
+  final bool startOnRegister;
+
+  const WelcomeDesktop({super.key, this.startOnRegister = false});
 
   @override
   State<WelcomeDesktop> createState() => _WelcomeDesktopState();
@@ -24,7 +27,9 @@ class _WelcomeDesktopState extends State<WelcomeDesktop> {
   static const double _artHeight = 1280;
   static const double _artVisibleFraction = 1010 / 1280;
 
-  _AuthPanel _panel = _AuthPanel.login;
+  late _AuthPanel _panel = widget.startOnRegister
+      ? _AuthPanel.register
+      : _AuthPanel.login;
 
   void _show(_AuthPanel panel) => setState(() => _panel = panel);
 

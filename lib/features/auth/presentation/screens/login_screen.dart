@@ -8,6 +8,7 @@ import '../../../../core/theme/widgets/app_button_styles.dart';
 import '../../../../core/theme/widgets/app_input_decoration.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/auth_layout.dart';
+import '../../../welcome/presentation/widgets/welcome_desktop.dart';
 
 /// Tela de login (usada no celular e quando a rota /login é aberta direto).
 class LoginScreen extends StatelessWidget {
@@ -15,6 +16,10 @@ class LoginScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // No PC, o login fica no painel da tela de boas-vindas
+    if (MediaQuery.sizeOf(context).width >= 900) {
+      return const WelcomeDesktop();
+    }
     return const AuthLayout(
       title: 'Que bom te ver de novo',
       subtitle:
