@@ -169,110 +169,111 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             path: AppRoutes.reportAbuse,
             builder: (context, state) => const ReportAbuseScreen(),
           ),
+          // Demais telas do app logado: também dentro da estrutura principal,
+          // para o menu lateral aparecer em todas elas no PC.
+          GoRoute(
+            path: AppRoutes.petLostCreate,
+            builder: (context, state) => const CreatePetLostScreen(),
+          ),
+          GoRoute(
+            path: '/pet-lost/edit/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              return CreatePetLostScreen(alertId: id);
+            },
+          ),
+          GoRoute(
+            path: '/pet-lost/details/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              final initial = state.extra is PetLostAlertEntity
+                  ? state.extra as PetLostAlertEntity
+                  : null;
+              return PetLostDetailScreen(alertId: id, initialAlert: initial);
+            },
+          ),
+          GoRoute(
+            path: AppRoutes.petFound,
+            builder: (context, state) => const PetFoundListScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.petFoundCreate,
+            builder: (context, state) => const CreatePetFoundScreen(),
+          ),
+          GoRoute(
+            path: '/pet-found/edit/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              return CreatePetFoundScreen(alertId: id);
+            },
+          ),
+          GoRoute(
+            path: '/public-profile/:userId',
+            builder: (context, state) {
+              final userId = state.pathParameters['userId']!;
+              final lostId = state.uri.queryParameters['lostId'];
+              final foundId = state.uri.queryParameters['foundId'];
+              return PublicProfileScreen(
+                userId: userId,
+                lostAlert: state.extra is PetLostAlertEntity
+                    ? state.extra as PetLostAlertEntity
+                    : null,
+                lostAlertId: lostId,
+                foundAlert: state.extra is PetFoundAlertEntity
+                    ? state.extra as PetFoundAlertEntity
+                    : null,
+                foundAlertId: foundId,
+                adoptionAlert: state.extra is PetAdoptionAlertEntity
+                    ? state.extra as PetAdoptionAlertEntity
+                    : null,
+              );
+            },
+          ),
+          GoRoute(
+            path: AppRoutes.petFoundMap,
+            builder: (context, state) => const PetFoundMapScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.petAdoption,
+            builder: (context, state) => const PetAdoptionListScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.petAdoptionCreate,
+            builder: (context, state) => const CreatePetAdoptionScreen(),
+          ),
+          GoRoute(
+            path: '/pet-adoption/edit/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              return CreatePetAdoptionScreen(alertId: id);
+            },
+          ),
+          GoRoute(
+            path: '/pet-matches/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              final targetFoundPetId = state.uri.queryParameters['foundId'];
+              return PetMatchResultsScreen(
+                petId: id,
+                initialHighlightPetId: targetFoundPetId,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/match-detail/:foundId',
+            builder: (context, state) {
+              final foundId = state.pathParameters['foundId']!;
+              final lostId = state.uri.queryParameters['lostId'];
+              final scoreStr = state.uri.queryParameters['score'];
+              final score = scoreStr != null ? double.tryParse(scoreStr) : null;
+              return PetMatchDetailScreen(
+                foundPetId: foundId,
+                lostPetId: lostId,
+                initialScore: score,
+              );
+            },
+          ),
         ],
-      ),
-
-      GoRoute(
-        path: AppRoutes.petLostCreate,
-        builder: (context, state) => const CreatePetLostScreen(),
-      ),
-      GoRoute(
-        path: '/pet-lost/edit/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          return CreatePetLostScreen(alertId: id);
-        },
-      ),
-      GoRoute(
-        path: '/pet-lost/details/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final initial = state.extra is PetLostAlertEntity
-              ? state.extra as PetLostAlertEntity
-              : null;
-          return PetLostDetailScreen(alertId: id, initialAlert: initial);
-        },
-      ),
-      GoRoute(
-        path: AppRoutes.petFound,
-        builder: (context, state) => const PetFoundListScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petFoundCreate,
-        builder: (context, state) => const CreatePetFoundScreen(),
-      ),
-      GoRoute(
-        path: '/pet-found/edit/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          return CreatePetFoundScreen(alertId: id);
-        },
-      ),
-      GoRoute(
-        path: '/public-profile/:userId',
-        builder: (context, state) {
-          final userId = state.pathParameters['userId']!;
-          final lostId = state.uri.queryParameters['lostId'];
-          final foundId = state.uri.queryParameters['foundId'];
-          return PublicProfileScreen(
-            userId: userId,
-            lostAlert: state.extra is PetLostAlertEntity
-                ? state.extra as PetLostAlertEntity
-                : null,
-            lostAlertId: lostId,
-            foundAlert: state.extra is PetFoundAlertEntity
-                ? state.extra as PetFoundAlertEntity
-                : null,
-            foundAlertId: foundId,
-            adoptionAlert: state.extra is PetAdoptionAlertEntity
-                ? state.extra as PetAdoptionAlertEntity
-                : null,
-          );
-        },
-      ),
-      GoRoute(
-        path: AppRoutes.petFoundMap,
-        builder: (context, state) => const PetFoundMapScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petAdoption,
-        builder: (context, state) => const PetAdoptionListScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.petAdoptionCreate,
-        builder: (context, state) => const CreatePetAdoptionScreen(),
-      ),
-      GoRoute(
-        path: '/pet-adoption/edit/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          return CreatePetAdoptionScreen(alertId: id);
-        },
-      ),
-      GoRoute(
-        path: '/pet-matches/:id',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          final targetFoundPetId = state.uri.queryParameters['foundId'];
-          return PetMatchResultsScreen(
-            petId: id,
-            initialHighlightPetId: targetFoundPetId,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/match-detail/:foundId',
-        builder: (context, state) {
-          final foundId = state.pathParameters['foundId']!;
-          final lostId = state.uri.queryParameters['lostId'];
-          final scoreStr = state.uri.queryParameters['score'];
-          final score = scoreStr != null ? double.tryParse(scoreStr) : null;
-          return PetMatchDetailScreen(
-            foundPetId: foundId,
-            lostPetId: lostId,
-            initialScore: score,
-          );
-        },
       ),
     ],
   );

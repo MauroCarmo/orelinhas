@@ -20,14 +20,40 @@ class AppShell extends StatelessWidget {
 
   static const double desktopBreakpoint = 900;
 
+  /// Item do menu marcado para a tela atual (-1 = nenhum).
   int get _currentIndex {
-    if (location.startsWith(AppRoutes.petLost)) return 1;
+    if (location.startsWith(AppRoutes.home) ||
+        location.startsWith(AppRoutes.reportAbuse)) {
+      return 0;
+    }
+    if (location.startsWith(AppRoutes.petLost) ||
+        location.startsWith(AppRoutes.petFound) ||
+        location.startsWith(AppRoutes.petAdoption) ||
+        location.startsWith('/pet-matches') ||
+        location.startsWith('/match-detail')) {
+      return 1;
+    }
     if (location.startsWith(AppRoutes.notifications)) return 2;
     if (location.startsWith(AppRoutes.profile) ||
         location.startsWith(AppRoutes.about)) {
       return 3;
     }
-    return 0;
+    return -1;
+  }
+
+  /// No celular a barra inferior só aparece nas telas principais; nas telas
+  /// de cadastro, edição e detalhes ela fica escondida (como antes).
+  bool get _showBottomBar {
+    const tabs = [
+      AppRoutes.home,
+      AppRoutes.petLost,
+      AppRoutes.petLostMap,
+      AppRoutes.profile,
+      AppRoutes.notifications,
+      AppRoutes.about,
+      AppRoutes.reportAbuse,
+    ];
+    return tabs.contains(location);
   }
 
   static final _destinations = [
@@ -80,7 +106,9 @@ class AppShell extends StatelessWidget {
 
     return Scaffold(
       body: child,
-      bottomNavigationBar: _BottomBar(selectedIndex: index),
+      bottomNavigationBar: _showBottomBar
+          ? _BottomBar(selectedIndex: index)
+          : null,
     );
   }
 }
